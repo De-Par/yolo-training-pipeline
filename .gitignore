@@ -1,0 +1,53 @@
+# Data and model artifacts
+data/
+models/
+runs/
+
+# Logs and reports
+*.log
+*.out
+*.err
+
+# Python caches and build artifacts
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Optional local config overrides
+.env
+.env.*
+
+# Keep example configs tracked
+!configs/*.example.yaml

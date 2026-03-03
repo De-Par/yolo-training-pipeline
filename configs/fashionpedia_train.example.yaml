@@ -1,0 +1,28 @@
+# Run with:
+#   python3 tools/train_yolo.py --cfg configs/fashionpedia_train.example.yaml
+
+# Path to YOLO checkpoint/config
+# Replace with the model you actually downloaded
+# Examples:
+#   models/YOLOv11/yolo11n.pt
+#   models/YOLOv26/yolo26s.pt
+model: models/YOLOv26/yolo26n.pt
+
+# Path to prepared dataset YAML produced by run_pipeline.py
+data: data/processed/fashionpedia/fashionpedia.yaml
+
+# Training hyperparameters
+epochs: 100      # total epochs
+imgsz: 640       # input image size
+batch: 16        # reduce if CUDA OOM
+
+# Hardware / loader settings
+device: 0        # 0 = first GPU, cpu = CPU training
+workers: 8       # dataloader workers
+
+# Output location for training logs/checkpoints
+project: runs/train
+name: fashionpedia-yolo26n-demo
+
+# Reproducibility
+seed: 42
