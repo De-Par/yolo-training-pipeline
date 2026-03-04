@@ -11,7 +11,7 @@ DEFAULTS: Dict[str, Any] = {
     "epochs": 100,
     "imgsz": 640,
     "batch": 16,
-    "device": "0",
+    "device": "cpu",
     "workers": 8,
     "project": "runs/train",
     "name": "yolo-run",
@@ -63,6 +63,10 @@ def main() -> None:
     model_value = _pick("model", args.model, cfg, required=True)
     data_value = _pick("data", args.data, cfg, required=True)
 
+    project_value = _pick("project", args.project, cfg)
+    # Use absolute project path to avoid nested Ultralytics default task folders.
+    project_value = str(Path(project_value).expanduser().resolve())
+
     train_kwargs = {
         "data": data_value,
         "epochs": _pick("epochs", args.epochs, cfg),
@@ -70,7 +74,7 @@ def main() -> None:
         "batch": _pick("batch", args.batch, cfg),
         "device": _pick("device", args.device, cfg),
         "workers": _pick("workers", args.workers, cfg),
-        "project": _pick("project", args.project, cfg),
+        "project": project_value,
         "name": _pick("name", args.name, cfg),
         "seed": _pick("seed", args.seed, cfg),
     }

@@ -7,6 +7,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+from tqdm import tqdm
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -109,9 +111,16 @@ def convert_coco_to_yolo(
     written_labels = 0
     missing_images = 0
     ambiguous_images = 0
+    missing_records: List[dict] = []
+    ambiguous_records: List[dict] = []
     basename_index = _build_basename_index(images_dir)
 
-    for image_id, image_info in images.items():
+    for image_id, image_info in tqdm(
+        images.items(),
+        total=len(images),
+        desc=f"Converting {split}",
+        unit="img",
+    ):
         file_name = image_info["file_name"]
         img_w = int(image_info["width"])
         img_h = int(image_info["height"])
@@ -123,9 +132,17 @@ def convert_coco_to_yolo(
                 src_img = candidates[0]
             elif len(candidates) > 1:
                 ambiguous_images += 1
+                ambiguous_records.append(
+                    {
+                        "image_id": image_id,
+                        "file_name": file_name,
+                        "candidates": [str(p) for p in candidates],
+                    }
+                )
                 continue
         if not src_img.exists():
             missing_images += 1
+            missing_records.append({"image_id": image_id, "file_name": file_name})
             continue
 
         safe_stem = _safe_rel_stem(file_name)
@@ -152,12 +169,27 @@ def convert_coco_to_yolo(
     names = [c.get("name", str(c["id"])) for c in categories]
     (output_dir / "classes.txt").write_text("\n".join(names), encoding="utf-8")
 
+    report_path = output_dir / f"conversion_report_{split}.json"
+    report = {
+        "split": split,
+        "num_classes": len(names),
+        "total_images_in_annotations": len(images),
+        "written_images": written_images,
+        "written_labels": written_labels,
+        "missing_images": missing_images,
+        "ambiguous_images": ambiguous_images,
+        "missing_records": missing_records,
+        "ambiguous_records": ambiguous_records,
+    }
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
     return {
         "num_classes": len(names),
         "written_images": written_images,
         "written_labels": written_labels,
         "missing_images": missing_images,
         "ambiguous_images": ambiguous_images,
+        "report_path": str(report_path),
     }
 
 

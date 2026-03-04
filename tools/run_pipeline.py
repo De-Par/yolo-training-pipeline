@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=16)
-    parser.add_argument("--device", type=str, default="0")
+    parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--project", type=str, default="runs/train")
     parser.add_argument("--name", type=str, default="yolo-train")
@@ -95,6 +95,8 @@ def prepare_fashionpedia(args: argparse.Namespace, output_dir: Path) -> Dict[str
         "val_missing_images": val_stats.get("missing_images", 0),
         "train_ambiguous_images": train_stats.get("ambiguous_images", 0),
         "val_ambiguous_images": val_stats.get("ambiguous_images", 0),
+        "train_report_path": train_stats.get("report_path"),
+        "val_report_path": val_stats.get("report_path"),
     }
 
 
@@ -155,6 +157,8 @@ def prepare_custom_coco(args: argparse.Namespace, output_dir: Path) -> Dict[str,
         "val_missing_images": val_stats.get("missing_images", 0),
         "train_ambiguous_images": train_stats.get("ambiguous_images", 0),
         "val_ambiguous_images": val_stats.get("ambiguous_images", 0),
+        "train_report_path": train_stats.get("report_path"),
+        "val_report_path": val_stats.get("report_path"),
     }
 
 
@@ -170,6 +174,8 @@ def main() -> None:
     output_dir = args.workdir / dataset_key
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    total_steps = 2 if args.prepare_only else 3
+    print(f"[INFO] 1/{total_steps} Preparing dataset...")
     if args.dataset == "fashionpedia":
         prep_stats = prepare_fashionpedia(args, output_dir)
     elif args.dataset == "deepfashion2":
@@ -182,6 +188,7 @@ def main() -> None:
             "Prepared dataset has zero train/val images. Check raw dataset structure and annotation paths."
         )
 
+    print(f"[INFO] 2/{total_steps} Writing data.yaml...")
     class_names = load_class_names(output_dir / "classes.txt")
     data_yaml = write_dataset_yaml(output_dir, class_names, dataset_key)
 
@@ -201,12 +208,16 @@ def main() -> None:
             f"train={prep_stats.get('train_ambiguous_images', 0)} "
             f"val={prep_stats.get('val_ambiguous_images', 0)}"
         )
+    if prep_stats.get("train_report_path") or prep_stats.get("val_report_path"):
+        print(f"conversion_report_train: {prep_stats.get('train_report_path')}")
+        print(f"conversion_report_val:   {prep_stats.get('val_report_path')}")
     print(f"data.yaml: {data_yaml}")
 
     if args.prepare_only:
-        print("Preparation-only mode enabled. Skipping training.")
+        print("[INFO] Preparation-only mode enabled. Skipping training.")
         return
 
+    print(f"[INFO] 3/{total_steps} Training...")
     from ultralytics import YOLO
 
     model = YOLO(args.model)
@@ -217,7 +228,7 @@ def main() -> None:
         batch=args.batch,
         device=args.device,
         workers=args.workers,
-        project=args.project,
+        project=str(Path(args.project).expanduser().resolve()),
         name=args.name,
         seed=args.seed,
     )

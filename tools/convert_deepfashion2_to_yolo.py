@@ -7,6 +7,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
+from tqdm import tqdm
+
 DEEPFASHION2_CLASSES = [
     "short_sleeve_top",
     "long_sleeve_top",
@@ -103,7 +105,7 @@ def convert_deepfashion2_to_yolo(
     written_labels = 0
     missing_images = 0
 
-    for ann_path in ann_files:
+    for ann_path in tqdm(ann_files, total=len(ann_files), desc=f"Converting {split}", unit="ann"):
         stem = ann_path.stem
         img_path = _find_img_for_stem(images_dir, stem)
         if img_path is None:
