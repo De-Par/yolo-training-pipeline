@@ -2,74 +2,52 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-from typing import Dict, List
-
+import os
+import sys
 import yaml
 
+from pathlib import Path
+from typing import Any, Dict, List
 from convert_coco_to_yolo import convert_coco_to_yolo
 from convert_deepfashion2_to_yolo import convert_deepfashion2_to_yolo
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="End-to-end YOLO training pipeline for Fashionpedia or DeepFashion2."
-    )
-    parser.add_argument("--dataset", choices=["fashionpedia", "deepfashion2", "custom-coco"], required=True)
-    parser.add_argument(
-        "--raw-root",
-        type=Path,
-        help="Root folder for built-in dataset modes (fashionpedia/deepfashion2).",
-    )
-    parser.add_argument(
-        "--workdir",
-        type=Path,
-        default=Path("data/processed"),
-        help="Where converted YOLO dataset and data.yaml are saved.",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        help="Model checkpoint/config for training (required unless --prepare-only).",
-    )
-    parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--batch", type=int, default=16)
-    parser.add_argument("--device", type=str, default="cpu")
-    parser.add_argument("--workers", type=int, default=8)
-    parser.add_argument("--project", type=str, default="runs/train")
-    parser.add_argument("--name", type=str, default="yolo-train")
-    parser.add_argument("--link-mode", choices=["symlink", "copy"], default="symlink")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument(
-        "--train-fraction",
-        type=float,
-        default=1.0,
-        help="Fraction of training split to prepare (0 < f <= 1).",
-    )
-    parser.add_argument(
-        "--val-fraction",
-        type=float,
-        default=1.0,
-        help="Fraction of validation split to prepare (0 < f <= 1).",
-    )
-    parser.add_argument(
-        "--sample-seed",
-        type=int,
-        default=42,
-        help="Random seed for deterministic split sampling during prepare.",
-    )
-    parser.add_argument("--custom-name", type=str, default="custom", help="Dataset folder name for custom-coco mode.")
-    parser.add_argument("--train-images-dir", type=Path, help="custom-coco: train images directory.")
-    parser.add_argument("--train-annotations", type=Path, help="custom-coco: train COCO annotations JSON.")
-    parser.add_argument("--val-images-dir", type=Path, help="custom-coco: val images directory.")
-    parser.add_argument("--val-annotations", type=Path, help="custom-coco: val COCO annotations JSON.")
-    parser.add_argument(
-        "--prepare-only",
-        action="store_true",
-        help="Only prepare YOLO dataset and data.yaml without starting training.",
-    )
-    return parser.parse_args()
+def log(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(f"[ERROR] {msg}", file=sys.stderr, flush=True)
+    raise SystemExit(code)
+
+
+def is_wsl() -> bool:
+    try:
+        return "WSL_DISTRO_NAME" in os.environ or "microsoft" in Path("/proc/version").read_text().lower()
+    except Exception:
+        return False
+
+
+def warn_on_slow_paths(path: Path, what: str) -> None:
+    try:
+        p = str(path.resolve())
+    except Exception:
+        p = str(path)
+    if is_wsl() and (p.startswith("/mnt/c/") or p.startswith("/mnt/C/")):
+        log(f"[WARN] {what} is on /mnt/c (NTFS) which is often slow in WSL: {p}")
+        log("[WARN] Prefer Linux FS (~/...) or /mnt/e on SSD for better performance.")
+
+
+def clamp_fraction(x: float, name: str) -> float:
+    if not (0.0 < x <= 1.0):
+        die(f"{name} must be in (0, 1], got {x}")
+    return x
+
+
+def load_class_names(classes_txt: Path) -> List[str]:
+    if not classes_txt.exists():
+        die(f"Missing {classes_txt}. Conversion step should have created classes.txt")
+    return [line.strip() for line in classes_txt.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def write_dataset_yaml(output_dir: Path, class_names: List[str], dataset_name: str) -> Path:
@@ -86,11 +64,41 @@ def write_dataset_yaml(output_dir: Path, class_names: List[str], dataset_name: s
     return yaml_path
 
 
-def load_class_names(classes_txt: Path) -> List[str]:
-    return [line.strip() for line in classes_txt.read_text(encoding="utf-8").splitlines() if line.strip()]
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Prepare YOLO dataset (images/labels + data.yaml) for Fashionpedia, DeepFashion2, or custom COCO."
+    )
+
+    parser.add_argument("--dataset", choices=["fashionpedia", "deepfashion2", "custom-coco"], required=True)
+    parser.add_argument(
+        "--raw-root",
+        type=Path,
+        help="Root folder for built-in dataset modes (fashionpedia/deepfashion2).",
+    )
+    parser.add_argument(
+        "--workdir",
+        type=Path,
+        default=Path("data/processed"),
+        help="Where converted YOLO dataset and data.yaml are saved.",
+    )
+
+    parser.add_argument("--link-mode", choices=["symlink", "copy"], default="symlink")
+
+    parser.add_argument("--train-fraction", type=float, default=1.0)
+    parser.add_argument("--val-fraction", type=float, default=1.0)
+    parser.add_argument("--sample-seed", type=int, default=42)
+
+    # custom-coco mode
+    parser.add_argument("--custom-name", type=str, default="custom", help="Dataset folder name for custom-coco mode.")
+    parser.add_argument("--train-images-dir", type=Path, help="custom-coco: train images directory.")
+    parser.add_argument("--train-annotations", type=Path, help="custom-coco: train COCO annotations JSON.")
+    parser.add_argument("--val-images-dir", type=Path, help="custom-coco: val images directory.")
+    parser.add_argument("--val-annotations", type=Path, help="custom-coco: val COCO annotations JSON.")
+
+    return parser.parse_args()
 
 
-def prepare_fashionpedia(args: argparse.Namespace, output_dir: Path) -> Dict[str, int]:
+def prepare_fashionpedia(args: argparse.Namespace, output_dir: Path) -> Dict[str, Any]:
     train_stats = convert_coco_to_yolo(
         images_dir=args.raw_root / "train" / "images",
         annotations_path=args.raw_root / "train" / "annotations.json",
@@ -122,7 +130,7 @@ def prepare_fashionpedia(args: argparse.Namespace, output_dir: Path) -> Dict[str
     }
 
 
-def prepare_deepfashion2(args: argparse.Namespace, output_dir: Path) -> Dict[str, int]:
+def prepare_deepfashion2(args: argparse.Namespace, output_dir: Path) -> Dict[str, Any]:
     train_stats = convert_deepfashion2_to_yolo(
         images_dir=args.raw_root / "train" / "image",
         annos_dir=args.raw_root / "train" / "annos",
@@ -150,7 +158,7 @@ def prepare_deepfashion2(args: argparse.Namespace, output_dir: Path) -> Dict[str
     }
 
 
-def prepare_custom_coco(args: argparse.Namespace, output_dir: Path) -> Dict[str, int]:
+def prepare_custom_coco(args: argparse.Namespace, output_dir: Path) -> Dict[str, Any]:
     required = {
         "--train-images-dir": args.train_images_dir,
         "--train-annotations": args.train_annotations,
@@ -159,7 +167,7 @@ def prepare_custom_coco(args: argparse.Namespace, output_dir: Path) -> Dict[str,
     }
     missing = [k for k, v in required.items() if v is None]
     if missing:
-        raise ValueError(f"custom-coco requires: {', '.join(missing)}")
+        die(f"custom-coco requires: {', '.join(missing)}")
 
     train_stats = convert_coco_to_yolo(
         images_dir=args.train_images_dir,
@@ -194,26 +202,28 @@ def prepare_custom_coco(args: argparse.Namespace, output_dir: Path) -> Dict[str,
 
 def main() -> None:
     args = parse_args()
-    if not (0.0 < args.train_fraction <= 1.0):
-        raise ValueError(f"--train-fraction must be in (0, 1], got {args.train_fraction}")
-    if not (0.0 < args.val_fraction <= 1.0):
-        raise ValueError(f"--val-fraction must be in (0, 1], got {args.val_fraction}")
+
+    args.train_fraction = clamp_fraction(args.train_fraction, "--train-fraction")
+    args.val_fraction = clamp_fraction(args.val_fraction, "--val-fraction")
 
     if args.dataset in {"fashionpedia", "deepfashion2"} and args.raw_root is None:
-        raise ValueError("--raw-root is required for dataset modes: fashionpedia, deepfashion2")
-    if not args.prepare_only and not args.model:
-        raise ValueError("--model is required unless --prepare-only is set")
+        die("--raw-root is required for dataset modes: fashionpedia, deepfashion2")
 
     dataset_key = args.custom_name if args.dataset == "custom-coco" else args.dataset
-    output_dir = args.workdir / dataset_key
+    output_dir = (args.workdir / dataset_key).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    total_steps = 2 if args.prepare_only else 3
-    print(f"[INFO] 1/{total_steps} Preparing dataset...")
-    print(
-        f"[INFO] Sampling: train_fraction={args.train_fraction} "
-        f"val_fraction={args.val_fraction} sample_seed={args.sample_seed}"
+    warn_on_slow_paths(args.workdir, "workdir")
+    if args.raw_root is not None:
+        warn_on_slow_paths(args.raw_root, "raw-root")
+
+    log(f"[INFO] Preparing dataset: {args.dataset} -> {output_dir}")
+    log(
+        "[INFO] Sampling: "
+        f"train_fraction={args.train_fraction} val_fraction={args.val_fraction} sample_seed={args.sample_seed} "
+        f"link_mode={args.link_mode}"
     )
+
     if args.dataset == "fashionpedia":
         prep_stats = prepare_fashionpedia(args, output_dir)
     elif args.dataset == "deepfashion2":
@@ -221,56 +231,38 @@ def main() -> None:
     else:
         prep_stats = prepare_custom_coco(args, output_dir)
 
-    if prep_stats["train_images"] == 0 or prep_stats["val_images"] == 0:
-        raise RuntimeError(
-            "Prepared dataset has zero train/val images. Check raw dataset structure and annotation paths."
-        )
+    if prep_stats.get("train_images", 0) == 0 or prep_stats.get("val_images", 0) == 0:
+        die("Prepared dataset has zero train/val images. Check raw dataset structure and annotation paths.")
 
-    print(f"[INFO] 2/{total_steps} Writing data.yaml...")
     class_names = load_class_names(output_dir / "classes.txt")
     data_yaml = write_dataset_yaml(output_dir, class_names, dataset_key)
 
-    print(
-        f"Prepared dataset={dataset_key} classes={prep_stats['num_classes']} "
-        f"train_images={prep_stats['train_images']} val_images={prep_stats['val_images']}"
+    log(
+        "[INFO] Prepared "
+        f"dataset={dataset_key} classes={prep_stats.get('num_classes')} "
+        f"train_images={prep_stats.get('train_images')} val_images={prep_stats.get('val_images')}"
     )
+
     if prep_stats.get("train_missing_images", 0) or prep_stats.get("val_missing_images", 0):
-        print(
-            "Warning: missing images "
+        log(
+            "[WARN] Missing images "
             f"train={prep_stats.get('train_missing_images', 0)} "
             f"val={prep_stats.get('val_missing_images', 0)}"
         )
     if prep_stats.get("train_ambiguous_images", 0) or prep_stats.get("val_ambiguous_images", 0):
-        print(
-            "Warning: ambiguous image basenames "
+        log(
+            "[WARN] Ambiguous image basenames "
             f"train={prep_stats.get('train_ambiguous_images', 0)} "
             f"val={prep_stats.get('val_ambiguous_images', 0)}"
         )
     if prep_stats.get("train_report_path") or prep_stats.get("val_report_path"):
-        print(f"conversion_report_train: {prep_stats.get('train_report_path')}")
-        print(f"conversion_report_val:   {prep_stats.get('val_report_path')}")
-    print(f"data.yaml: {data_yaml}")
+        log(f"[INFO] conversion_report_train: {prep_stats.get('train_report_path')}")
+        log(f"[INFO] conversion_report_val:   {prep_stats.get('val_report_path')}")
 
-    if args.prepare_only:
-        print("[INFO] Preparation-only mode enabled. Skipping training.")
-        return
-
-    print(f"[INFO] 3/{total_steps} Training...")
-    from ultralytics import YOLO
-
-    model = YOLO(args.model)
-    model.train(
-        data=str(data_yaml),
-        epochs=args.epochs,
-        imgsz=args.imgsz,
-        batch=args.batch,
-        device=args.device,
-        workers=args.workers,
-        project=str(Path(args.project).expanduser().resolve()),
-        name=args.name,
-        seed=args.seed,
-    )
+    log(f"[INFO] data.yaml: {data_yaml}")
+    log("[INFO] Done.")
 
 
 if __name__ == "__main__":
     main()
+    

@@ -8,12 +8,9 @@ if [ "$IS_SOURCED" -ne 1 ]; then
     exit 1
 fi
 
-PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-if [ -z "$PROJECT_ROOT" ]; then
-    SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-    PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-fi
-cd "$PROJECT_ROOT" || return 1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
+cd "${PROJECT_ROOT}"
 
 python3 -m venv .venv || return 1
 .venv/bin/python -m pip install --upgrade pip || return 1
