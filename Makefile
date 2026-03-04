@@ -28,6 +28,9 @@ fashionpedia-pipeline:
 		--raw-root $(RAW_ROOT) \
 		--workdir data/processed \
 		--model $(MODEL) \
+		--train-fraction $(or $(TRAIN_FRACTION),1.0) \
+		--val-fraction $(or $(VAL_FRACTION),1.0) \
+		--sample-seed $(or $(SAMPLE_SEED),42) \
 		--epochs $(or $(EPOCHS),100) \
 		--imgsz $(or $(IMGSZ),640) \
 		--batch $(or $(BATCH),16) \
@@ -40,6 +43,9 @@ deepfashion2-pipeline:
 		--raw-root $(RAW_ROOT) \
 		--workdir data/processed \
 		--model $(MODEL) \
+		--train-fraction $(or $(TRAIN_FRACTION),1.0) \
+		--val-fraction $(or $(VAL_FRACTION),1.0) \
+		--sample-seed $(or $(SAMPLE_SEED),42) \
 		--epochs $(or $(EPOCHS),100) \
 		--imgsz $(or $(IMGSZ),640) \
 		--batch $(or $(BATCH),16) \

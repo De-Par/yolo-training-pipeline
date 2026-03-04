@@ -70,7 +70,7 @@ data/
 
 ```bash
 # 1) Create venv & install dependencies
-./scripts/setup_env.sh
+source scripts/setup_env.sh
 
 # 2) Download YOLO weights (example: YOLOv26)
 ./scripts/download_models.sh --generation v26 --task detect --size n
@@ -83,13 +83,15 @@ python tools/run_pipeline.py \
   --dataset fashionpedia \
   --raw-root data/raw/fashionpedia \
   --workdir data/processed \
+  --train-fraction 0.1 \
+  --val-fraction 0.2 \
   --prepare-only
 
 # 5) Start training
 python tools/train_yolo.py \
   --data data/processed/fashionpedia/fashionpedia.yaml \
   --model models/YOLOv26/yolo26n.pt \
-  --epochs 100 --imgsz 640 --batch 16 --device 0
+  --epochs 100 --imgsz 640 --batch 16 --device cpu
 ```
 
 
@@ -155,6 +157,26 @@ Supported modes:
 - `custom-coco`
 
 The script prepares YOLO dataset structure and generates `data.yaml`. It can also start training unless `--prepare-only` is used.
+
+### Sampling a subset to speed up experiments
+
+You can prepare only a fraction of train/val data:
+
+```bash
+python tools/run_pipeline.py \
+  --dataset fashionpedia \
+  --raw-root data/raw/fashionpedia \
+  --workdir data/processed \
+  --train-fraction 0.1 \
+  --val-fraction 0.2 \
+  --sample-seed 42 \
+  --prepare-only
+```
+
+Parameters:
+- `--train-fraction`: fraction of train split in `(0, 1]`
+- `--val-fraction`: fraction of val split in `(0, 1]`
+- `--sample-seed`: deterministic sampling seed
 
 
 <a id="fashionpedia-mode"></a>
