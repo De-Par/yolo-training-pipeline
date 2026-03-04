@@ -42,6 +42,7 @@ This repository helps you:
 
 ```text
 scripts/
+  setup_env.sh               # Create venv + install dependencies
   download_datasets.sh        # Download/unpack helpers for raw datasets
   download_models.sh          # Download YOLO weights by generation
 
@@ -68,13 +69,8 @@ data/
 ## ⚡ Quick Start in 1 Minute
 
 ```bash
-# 0) Create venv
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-
-# 1) Install dependencies
-python -m pip install -r requirements.txt
+# 1) Create venv & install dependencies
+./scripts/setup_env.sh
 
 # 2) Download YOLO weights (example: YOLOv26)
 ./scripts/download_models.sh --generation v26 --task detect --size n
@@ -274,6 +270,9 @@ python tools/train_yolo.py \
   --model models/YOLOv26/yolo26n.pt \
   --epochs 100 --imgsz 640 --batch 16 --device 0
 ```
+
+Note: `project` is normalized to an absolute path by the wrapper script, so logs/checkpoints are written to a clean path like:
+`<project>/<name>`.
 
 ### Option B: Config file (`--cfg`)
 
