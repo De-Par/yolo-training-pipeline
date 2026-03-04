@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import shutil
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
@@ -23,6 +24,18 @@ def parse_args() -> argparse.Namespace:
         choices=["symlink", "copy"],
         default="symlink",
         help="How images are placed into output/images/<split>",
+    )
+    parser.add_argument(
+        "--sample-fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of images to keep from annotations for this split (0 < f <= 1).",
+    )
+    parser.add_argument(
+        "--sample-seed",
+        type=int,
+        default=42,
+        help="Random seed for deterministic image sampling.",
     )
     return parser.parse_args()
 
@@ -87,19 +100,35 @@ def convert_coco_to_yolo(
     output_dir: Path,
     split: str,
     link_mode: str = "symlink",
+    sample_fraction: float = 1.0,
+    sample_seed: int = 42,
 ) -> Dict[str, int]:
+    if not (0.0 < sample_fraction <= 1.0):
+        raise ValueError(f"sample_fraction must be in (0, 1], got {sample_fraction}")
+
     with annotations_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
     categories: List[dict] = sorted(data["categories"], key=lambda c: int(c["id"]))
     cat_id_to_idx = {int(c["id"]): i for i, c in enumerate(categories)}
 
-    images = {int(img["id"]): img for img in data["images"]}
+    all_images = {int(img["id"]): img for img in data["images"]}
+    image_ids = sorted(all_images.keys())
+    selected_count = len(image_ids)
+    if sample_fraction < 1.0 and image_ids:
+        selected_count = max(1, int(round(len(image_ids) * sample_fraction)))
+        rnd = random.Random(sample_seed)
+        selected_ids = set(rnd.sample(image_ids, selected_count))
+        images = {image_id: all_images[image_id] for image_id in image_ids if image_id in selected_ids}
+    else:
+        images = {image_id: all_images[image_id] for image_id in image_ids}
     anns_by_image: Dict[int, List[dict]] = {}
     for ann in data["annotations"]:
         if "bbox" not in ann or ann.get("iscrowd", 0) == 1:
             continue
         img_id = int(ann["image_id"])
+        if img_id not in images:
+            continue
         anns_by_image.setdefault(img_id, []).append(ann)
 
     images_out = output_dir / "images" / split
@@ -173,7 +202,10 @@ def convert_coco_to_yolo(
     report = {
         "split": split,
         "num_classes": len(names),
-        "total_images_in_annotations": len(images),
+        "total_images_in_annotations": len(all_images),
+        "sample_fraction": sample_fraction,
+        "sample_seed": sample_seed,
+        "sampled_images": len(images),
         "written_images": written_images,
         "written_labels": written_labels,
         "missing_images": missing_images,
@@ -201,6 +233,8 @@ def main() -> None:
         output_dir=args.output_dir,
         split=args.split,
         link_mode=args.link_mode,
+        sample_fraction=args.sample_fraction,
+        sample_seed=args.sample_seed,
     )
     print(json.dumps(stats, ensure_ascii=False, indent=2))
 

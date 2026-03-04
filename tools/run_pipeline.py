@@ -41,6 +41,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--name", type=str, default="yolo-train")
     parser.add_argument("--link-mode", choices=["symlink", "copy"], default="symlink")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--train-fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of training split to prepare (0 < f <= 1).",
+    )
+    parser.add_argument(
+        "--val-fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of validation split to prepare (0 < f <= 1).",
+    )
+    parser.add_argument(
+        "--sample-seed",
+        type=int,
+        default=42,
+        help="Random seed for deterministic split sampling during prepare.",
+    )
     parser.add_argument("--custom-name", type=str, default="custom", help="Dataset folder name for custom-coco mode.")
     parser.add_argument("--train-images-dir", type=Path, help="custom-coco: train images directory.")
     parser.add_argument("--train-annotations", type=Path, help="custom-coco: train COCO annotations JSON.")
@@ -79,6 +97,8 @@ def prepare_fashionpedia(args: argparse.Namespace, output_dir: Path) -> Dict[str
         output_dir=output_dir,
         split="train",
         link_mode=args.link_mode,
+        sample_fraction=args.train_fraction,
+        sample_seed=args.sample_seed,
     )
     val_stats = convert_coco_to_yolo(
         images_dir=args.raw_root / "val" / "images",
@@ -86,6 +106,8 @@ def prepare_fashionpedia(args: argparse.Namespace, output_dir: Path) -> Dict[str
         output_dir=output_dir,
         split="val",
         link_mode=args.link_mode,
+        sample_fraction=args.val_fraction,
+        sample_seed=args.sample_seed,
     )
     return {
         "num_classes": train_stats["num_classes"],
@@ -107,6 +129,8 @@ def prepare_deepfashion2(args: argparse.Namespace, output_dir: Path) -> Dict[str
         output_dir=output_dir,
         split="train",
         link_mode=args.link_mode,
+        sample_fraction=args.train_fraction,
+        sample_seed=args.sample_seed,
     )
     val_stats = convert_deepfashion2_to_yolo(
         images_dir=args.raw_root / "validation" / "image",
@@ -114,6 +138,8 @@ def prepare_deepfashion2(args: argparse.Namespace, output_dir: Path) -> Dict[str
         output_dir=output_dir,
         split="val",
         link_mode=args.link_mode,
+        sample_fraction=args.val_fraction,
+        sample_seed=args.sample_seed,
     )
     return {
         "num_classes": train_stats["num_classes"],
@@ -141,6 +167,8 @@ def prepare_custom_coco(args: argparse.Namespace, output_dir: Path) -> Dict[str,
         output_dir=output_dir,
         split="train",
         link_mode=args.link_mode,
+        sample_fraction=args.train_fraction,
+        sample_seed=args.sample_seed,
     )
     val_stats = convert_coco_to_yolo(
         images_dir=args.val_images_dir,
@@ -148,6 +176,8 @@ def prepare_custom_coco(args: argparse.Namespace, output_dir: Path) -> Dict[str,
         output_dir=output_dir,
         split="val",
         link_mode=args.link_mode,
+        sample_fraction=args.val_fraction,
+        sample_seed=args.sample_seed,
     )
     return {
         "num_classes": train_stats["num_classes"],
@@ -164,6 +194,10 @@ def prepare_custom_coco(args: argparse.Namespace, output_dir: Path) -> Dict[str,
 
 def main() -> None:
     args = parse_args()
+    if not (0.0 < args.train_fraction <= 1.0):
+        raise ValueError(f"--train-fraction must be in (0, 1], got {args.train_fraction}")
+    if not (0.0 < args.val_fraction <= 1.0):
+        raise ValueError(f"--val-fraction must be in (0, 1], got {args.val_fraction}")
 
     if args.dataset in {"fashionpedia", "deepfashion2"} and args.raw_root is None:
         raise ValueError("--raw-root is required for dataset modes: fashionpedia, deepfashion2")
@@ -176,6 +210,10 @@ def main() -> None:
 
     total_steps = 2 if args.prepare_only else 3
     print(f"[INFO] 1/{total_steps} Preparing dataset...")
+    print(
+        f"[INFO] Sampling: train_fraction={args.train_fraction} "
+        f"val_fraction={args.val_fraction} sample_seed={args.sample_seed}"
+    )
     if args.dataset == "fashionpedia":
         prep_stats = prepare_fashionpedia(args, output_dir)
     elif args.dataset == "deepfashion2":

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import shutil
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
@@ -39,6 +40,18 @@ def parse_args() -> argparse.Namespace:
         choices=["symlink", "copy"],
         default="symlink",
         help="How images are placed into output/images/<split>",
+    )
+    parser.add_argument(
+        "--sample-fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of annotation files to keep for this split (0 < f <= 1).",
+    )
+    parser.add_argument(
+        "--sample-seed",
+        type=int,
+        default=42,
+        help="Random seed for deterministic annotation sampling.",
     )
     return parser.parse_args()
 
@@ -94,13 +107,24 @@ def convert_deepfashion2_to_yolo(
     output_dir: Path,
     split: str,
     link_mode: str = "symlink",
+    sample_fraction: float = 1.0,
+    sample_seed: int = 42,
 ) -> Dict[str, int]:
+    if not (0.0 < sample_fraction <= 1.0):
+        raise ValueError(f"sample_fraction must be in (0, 1], got {sample_fraction}")
+
     images_out = output_dir / "images" / split
     labels_out = output_dir / "labels" / split
     images_out.mkdir(parents=True, exist_ok=True)
     labels_out.mkdir(parents=True, exist_ok=True)
 
-    ann_files = sorted(annos_dir.glob("*.json"))
+    all_ann_files = sorted(annos_dir.glob("*.json"))
+    ann_files = all_ann_files
+    if sample_fraction < 1.0 and all_ann_files:
+        selected_count = max(1, int(round(len(all_ann_files) * sample_fraction)))
+        rnd = random.Random(sample_seed)
+        selected_idx = set(rnd.sample(range(len(all_ann_files)), selected_count))
+        ann_files = [p for i, p in enumerate(all_ann_files) if i in selected_idx]
     written_images = 0
     written_labels = 0
     missing_images = 0
@@ -150,6 +174,9 @@ def convert_deepfashion2_to_yolo(
         "written_labels": written_labels,
         "missing_images": missing_images,
         "ann_files": len(ann_files),
+        "total_ann_files": len(all_ann_files),
+        "sample_fraction": sample_fraction,
+        "sample_seed": sample_seed,
     }
 
 
@@ -161,6 +188,8 @@ def main() -> None:
         output_dir=args.output_dir,
         split=args.split,
         link_mode=args.link_mode,
+        sample_fraction=args.sample_fraction,
+        sample_seed=args.sample_seed,
     )
     print(json.dumps(stats, ensure_ascii=False, indent=2))
 
