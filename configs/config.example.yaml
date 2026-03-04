@@ -3,7 +3,7 @@
 #
 # Ultralytics docs:
 # - Config / arguments list: https://docs.ultralytics.com/usage/cfg/
-# - Train mode:            https://docs.ultralytics.com/modes/train/
+# - Train mode:             https://docs.ultralytics.com/modes/train/
 #
 # Notes:
 # - CLI overrides YAML if you pass the same option via CLI.
@@ -126,7 +126,7 @@ box: 7.5                     # box loss gain
 cls: 0.5                     # class loss gain
 dfl: 1.5                      # distribution focal loss gain (modern heads)
 
-label_smoothing: 0.0         # label smoothing for cls loss
+label_smoothing: null        # unsupported in ultralytics 8.4.x detect cfg; kept for compatibility notes
 
 # ============================================================
 # AUGMENTATIONS (COMMON YOLO SET)
@@ -161,7 +161,7 @@ close_mosaic: 10
 
 # Other (version-dependent)
 erasing: 0.0
-crop_fraction: 1.0
+crop_fraction: null          # unsupported in ultralytics 8.4.x detect cfg; kept for compatibility notes
 
 # ============================================================
 # VALIDATION / NMS-LIKE KNOBS 
