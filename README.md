@@ -20,6 +20,7 @@ This repository helps you:
 - [Custom COCO Mode](#custom-coco-mode)
 - [Prepare-Only Mode (No Training)](#prepare-only)
 - [Universal Training Script (`tools/train_yolo.py`)](#train-yolo)
+- [Training Log Metrics](#log-metrics)
 - [Device Setup (CPU/GPU/MPS/NUMA)](#device-setup)
 - [Example Configs](#example-configs)
 - [Output Format Produced by Pipeline](#output-format)
@@ -290,7 +291,7 @@ python tools/run_pipeline.py \
 python tools/train_yolo.py \
   --data data/processed/fashionpedia/fashionpedia.yaml \
   --model models/YOLOv26/yolo26n.pt \
-  --epochs 100 --imgsz 640 --batch 16 --device 0
+  --epochs 100 --imgsz 640 --batch 16 --device cpu
 ```
 
 Note: `project` is normalized to an absolute path by the wrapper script, so logs/checkpoints are written to a clean path like:
@@ -310,6 +311,28 @@ python tools/train_yolo.py \
   --model models/YOLOv11/yolo11s.pt \
   --epochs 150
 ```
+
+<a id="log-metrics"></a>
+## 📊 Training Log Metrics
+
+Common fields in YOLO training logs:
+
+- `box_loss`: bbox localization loss (lower is better).
+- `cls_loss`: class prediction loss (lower is better).
+- `dfl_loss`: Distribution Focal Loss for box quality (lower is better).
+- `Instances`: number of labeled objects in the current batch.
+- `Size`: training image size (`imgsz`).
+
+Validation block:
+- `Box(P)`: precision (higher means fewer false positives).
+- `R`: recall (higher means fewer missed objects).
+- `mAP50`: AP at IoU=0.50 (less strict).
+- `mAP50-95`: AP averaged over IoU `0.50:0.95` (main strict metric).
+
+How to read quickly:
+- Early epochs can be noisy, especially with small `val` split.
+- Track trend, not one epoch: `box/cls/dfl` should generally go down.
+- Prioritize `mAP50-95` growth as the main quality signal.
 
 <a id="device-setup"></a>
 ## 🖥️ Device Setup (CPU/GPU/MPS/NUMA)
