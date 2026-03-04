@@ -20,6 +20,7 @@ This repository helps you:
 - [Custom COCO Mode](#custom-coco-mode)
 - [Prepare-Only Mode (No Training)](#prepare-only)
 - [Universal Training Script (`tools/train_yolo.py`)](#train-yolo)
+- [Device Setup (CPU/GPU/MPS/NUMA)](#device-setup)
 - [Example Configs](#example-configs)
 - [Output Format Produced by Pipeline](#output-format)
 - [Custom YOLO Dataset Requirements (Direct Training)](#custom-yolo-requirements)
@@ -288,6 +289,66 @@ python tools/train_yolo.py \
   --model models/YOLOv11/yolo11s.pt \
   --epochs 150
 ```
+
+<a id="device-setup"></a>
+## 🖥️ Device Setup (CPU/GPU/MPS/NUMA)
+
+Use `--device` based on your hardware.
+
+### CPU
+
+```bash
+python tools/train_yolo.py \
+  --data data/processed/fashionpedia/fashionpedia.yaml \
+  --model models/YOLOv26/yolo26n.pt \
+  --device cpu --batch 8
+```
+
+If `device=0` fails with `torch.cuda.is_available(): False`, switch to `--device cpu`.
+
+### NVIDIA GPU (single GPU)
+
+```bash
+python tools/train_yolo.py \
+  --data data/processed/fashionpedia/fashionpedia.yaml \
+  --model models/YOLOv26/yolo26n.pt \
+  --device 0
+```
+
+### Apple Silicon (M1/M2/M3, MPS)
+
+```bash
+python tools/train_yolo.py \
+  --data data/processed/fashionpedia/fashionpedia.yaml \
+  --model models/YOLOv26/yolo26n.pt \
+  --device mps
+```
+
+### Multi-GPU (NVIDIA)
+
+```bash
+python tools/train_yolo.py \
+  --data data/processed/fashionpedia/fashionpedia.yaml \
+  --model models/YOLOv26/yolo26n.pt \
+  --device 0,1
+```
+
+### Multi-CPU / NUMA (Linux)
+
+Bind CPU and memory to one NUMA node to reduce cross-node overhead:
+
+```bash
+numactl --cpunodebind=0 --membind=0 \
+python tools/train_yolo.py \
+  --data /path/to/data.yaml \
+  --model /path/to/model.pt \
+  --device cpu --workers 16 --batch 16
+```
+
+Tips:
+- Increase `--workers` on strong CPUs and fast storage.
+- Reduce `--batch` first if you hit OOM.
+- On CPU/MPS, start with smaller models (`n`, `s`).
 
 
 <a id="example-configs"></a>
