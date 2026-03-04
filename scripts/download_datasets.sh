@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 usage() {
     cat <<'EOF'
 Download raw datasets for YOLO26 pipeline
@@ -87,28 +91,35 @@ fashionpedia() {
     unzip -q -o "$dl/train2020.zip" -d "$root/train/images"
     unzip -q -o "$dl/val_test2020.zip" -d "$root/val/images"
 
-    # Flatten one nested directory (e.g. train/, train2020/, test/, val_test2020/)
-    # so final layout stays compatible with pipeline expectations: images/*.jpg
+    # Flatten all nested directories (e.g. train/, train2020/, test/, val_test2020/)
+    # so final layout stays compatible with pipeline expectations: images/*.jpg.
     flatten_images_dir() {
         local dir="$1"
-        local nested_dir
+        local moved=0
+        local overwritten=0
 
         # If files are already present at top level, nothing to do
-        if find "$dir" -maxdepth 1 -type f | grep -q .; then
+        if ! find "$dir" -mindepth 1 -maxdepth 3 -type d | grep -q .; then
             return 0
         fi
 
-        # Find first nested directory that contains files
-        nested_dir="$(find "$dir" -mindepth 1 -maxdepth 2 -type d | while IFS= read -r d; do
-            if find "$d" -maxdepth 1 -type f | grep -q .; then
-                echo "$d"
-                break
-            fi
-        done)"
+        while IFS= read -r nested_dir; do
+            while IFS= read -r file; do
+                local dst="$dir/$(basename "$file")"
+                if [[ -e "$dst" ]]; then
+                    overwritten=$((overwritten + 1))
+                fi
+                mv -f "$file" "$dst"
+                moved=$((moved + 1))
+            done < <(find "$nested_dir" -maxdepth 1 -type f)
+        done < <(find "$dir" -mindepth 1 -maxdepth 3 -type d | sort -r)
 
-        if [[ -n "${nested_dir:-}" ]]; then
-            find "$nested_dir" -maxdepth 1 -type f -exec mv -f {} "$dir/" \;
-            rmdir "$nested_dir" 2>/dev/null || true
+        find "$dir" -mindepth 1 -type d -empty -delete
+        if [[ "$moved" -gt 0 ]]; then
+            echo "[Fashionpedia] Flattened $moved files in $dir"
+        fi
+        if [[ "$overwritten" -gt 0 ]]; then
+            echo "[Fashionpedia] Warning: $overwritten files were overwritten while flattening $dir" >&2
         fi
     }
 
@@ -148,6 +159,8 @@ deepfashion2() {
     local dl="$root/downloads"
     local unpack="$root/unpacked"
     local pass="${DEEPFASHION2_PASSWORD:-}"
+    local img_copied=0 img_collision=0 img_identical=0
+    local ann_copied=0 ann_collision=0 ann_identical=0
     mkdir -p "$dl" "$unpack"
 
     if [[ -n "${DEEPFASHION2_URLS:-}" ]]; then
@@ -177,13 +190,43 @@ EOF
     mkdir -p "$root/train/image" "$root/train/annos" "$root/validation/image" "$root/validation/annos"
 
     echo "[DeepFashion2] Organizing files..."
+    copy_file_safe() {
+        local src="$1"
+        local dst_dir="$2"
+        local kind="$3"
+        local dst="$dst_dir/$(basename "$src")"
+        if [[ -e "$dst" ]]; then
+            if cmp -s "$src" "$dst"; then
+                if [[ "$kind" == "img" ]]; then
+                    img_identical=$((img_identical + 1))
+                else
+                    ann_identical=$((ann_identical + 1))
+                fi
+            else
+                if [[ "$kind" == "img" ]]; then
+                    img_collision=$((img_collision + 1))
+                else
+                    ann_collision=$((ann_collision + 1))
+                fi
+                echo "[DeepFashion2] Warning: collision for $(basename "$src"), skipping." >&2
+            fi
+            return
+        fi
+        cp -f "$src" "$dst"
+        if [[ "$kind" == "img" ]]; then
+            img_copied=$((img_copied + 1))
+        else
+            ann_copied=$((ann_copied + 1))
+        fi
+    }
+
     find "$unpack" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | while IFS= read -r f; do
         case "$f" in
         *train*/*image*|*train*/image/*)
-            cp -f "$f" "$root/train/image/"
+            copy_file_safe "$f" "$root/train/image" "img"
             ;;
         *validation*/*image*|*val*/*image*|*validation*/image/*)
-            cp -f "$f" "$root/validation/image/"
+            copy_file_safe "$f" "$root/validation/image" "img"
             ;;
         esac
     done
@@ -191,10 +234,10 @@ EOF
     find "$unpack" -type f -name '*.json' | while IFS= read -r f; do
         case "$f" in
         *train*/*anno*|*train*/annos/*)
-            cp -f "$f" "$root/train/annos/"
+            copy_file_safe "$f" "$root/train/annos" "ann"
             ;;
         *validation*/*anno*|*val*/*anno*|*validation*/annos/*)
-            cp -f "$f" "$root/validation/annos/"
+            copy_file_safe "$f" "$root/validation/annos" "ann"
             ;;
         esac
     done
@@ -207,6 +250,13 @@ EOF
 
     echo "[DeepFashion2] Ready at: $root"
     echo "[DeepFashion2] Counts: train_images=$train_img_count val_images=$val_img_count train_annos=$train_ann_count val_annos=$val_ann_count"
+    echo "[DeepFashion2] Copied: images=$img_copied annos=$ann_copied"
+    if [[ "$img_collision" -gt 0 || "$ann_collision" -gt 0 ]]; then
+        echo "[DeepFashion2] Collisions skipped: images=$img_collision annos=$ann_collision" >&2
+    fi
+    if [[ "$img_identical" -gt 0 || "$ann_identical" -gt 0 ]]; then
+        echo "[DeepFashion2] Identical duplicates skipped: images=$img_identical annos=$ann_identical"
+    fi
 
     if [[ "$train_img_count" -eq 0 || "$val_img_count" -eq 0 || "$train_ann_count" -eq 0 || "$val_ann_count" -eq 0 ]]; then
         echo "[DeepFashion2] Warning: one or more expected folders are empty. Verify archive layout and password." >&2
