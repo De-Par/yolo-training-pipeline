@@ -13,6 +13,7 @@ download-datasets:
 	./scripts/download_datasets.sh --dataset all --out-dir $(or $(OUT_DIR),data/raw)
 
 check:
+	bash -n scripts/setup_env.sh
 	bash -n scripts/download_datasets.sh
 	bash -n scripts/download_models.sh
 	$(PYTHON) -m py_compile tools/*.py
@@ -30,8 +31,8 @@ fashionpedia-pipeline:
 		--epochs $(or $(EPOCHS),100) \
 		--imgsz $(or $(IMGSZ),640) \
 		--batch $(or $(BATCH),16) \
-		--device $(or $(DEVICE),0) \
-		--name $(or $(NAME),yolo26-fashionpedia)
+		--device $(or $(DEVICE),cpu) \
+		--name $(or $(NAME),yolo-fashionpedia)
 
 deepfashion2-pipeline:
 	$(PYTHON) tools/run_pipeline.py \
@@ -42,5 +43,5 @@ deepfashion2-pipeline:
 		--epochs $(or $(EPOCHS),100) \
 		--imgsz $(or $(IMGSZ),640) \
 		--batch $(or $(BATCH),16) \
-		--device $(or $(DEVICE),0) \
-		--name $(or $(NAME),yolo26-deepfashion2)
+		--device $(or $(DEVICE),cpu) \
+		--name $(or $(NAME),yolo-deepfashion2)
