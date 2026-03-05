@@ -250,6 +250,28 @@ Rules:
 - `class_id` is zero-based
 - label stem must match image stem
 
+### Filter prepared dataset by classes
+
+If you want to train on a subset of classes (for example only `shoe`), create a filtered YOLO dataset:
+
+```bash
+python tools/filter_yolo_dataset_classes.py \
+    --src data/processed/fashionpedia \
+    --dst data/processed/fashionpedia_shoes \
+    --class-names shoe
+```
+
+By default, images with no remaining boxes are dropped.  
+Use `--keep-empty` to keep them as background negatives.
+
+Then train with the filtered dataset YAML:
+
+```bash
+python tools/train_yolo.py \
+    --model models/YOLOv26/yolo26m.pt \
+    --data data/processed/fashionpedia_shoes/fashionpedia_shoes.yaml
+```
+
 
 ## CLI reference: prepare_dataset.py
 
@@ -308,6 +330,42 @@ python tools/train_yolo.py \
     --batch 48 --device 0 --cache ram --compile
 ```
 
+Train only specific class IDs without rebuilding dataset:
+
+```bash
+python tools/train_yolo.py \
+    --cfg configs/config.cuda.maxacc.yaml \
+    --classes 23
+```
+
+### Ready hardware presets
+
+High-accuracy presets for clothing detection are included:
+
+- `configs/config.cuda.maxacc.yaml` (NVIDIA CUDA)
+- `configs/config.mps.maxacc.yaml` (Apple Silicon MPS)
+
+Run:
+
+```bash
+python tools/train_yolo.py --cfg configs/config.cuda.maxacc.yaml
+# or
+python tools/train_yolo.py --cfg configs/config.mps.maxacc.yaml
+```
+
+### Per-class AP report
+
+To inspect long-tail quality and identify weak classes, run:
+
+```bash
+python tools/report_per_class_ap.py \
+    --model runs/train/<run_name>/weights/best.pt \
+    --data data/processed/fashionpedia/fashionpedia.yaml \
+    --split val --imgsz 896 --batch 8 --device mps
+```
+
+Reports are saved to `runs/analysis/` as CSV and JSON.
+
 
 ## CLI reference: train_yolo.py
 
@@ -323,6 +381,7 @@ python tools/train_yolo.py \
 | `--batch` | int | ❌ | `32` | Batch size |
 | `--device` | str/int | ❌ | auto | `0`, `cpu`, `cuda:0`, etc. |
 | `--workers` | int | ❌ | `12` | Dataloader workers |
+| `--classes` | str | ❌ | – | Comma-separated class IDs for train filter, e.g. `23` or `0,2,5` |
 | `--project` | str | ❌ | `runs/train` | Output base directory |
 | `--name` | str | ❌ | `yolo-run` | Run name |
 | `--seed` | int | ❌ | `42` | Random seed |
