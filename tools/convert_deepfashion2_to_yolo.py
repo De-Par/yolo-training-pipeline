@@ -5,10 +5,11 @@ import argparse
 import json
 import random
 import shutil
+
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
-
 from tqdm import tqdm
+
 
 DEEPFASHION2_CLASSES = [
     "short_sleeve_top",

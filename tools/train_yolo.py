@@ -6,7 +6,7 @@ import yaml
 import torch
 
 from pathlib import Path
-from typing import Any, Dict, Set
+from typing import Any, Dict, List, Set
 
 
 DEFAULTS: Dict[str, Any] = {
@@ -58,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch", type=int)
     parser.add_argument("--device", type=str, help='Examples: "cpu", "0", "cuda:0"')
     parser.add_argument("--workers", type=int)
+    parser.add_argument("--classes", type=str, help='Comma-separated class IDs, e.g. "0,2,5"')
 
     parser.add_argument("--project", type=str)
     parser.add_argument("--name", type=str)
@@ -93,6 +94,27 @@ def pick(name: str, cli_value: Any, cfg: Dict[str, Any], *, required: bool = Fal
     if required:
         raise ValueError(f"Missing required parameter '{name}'. Provide via --{name} or --cfg.")
     return DEFAULTS[name]
+
+
+def parse_classes_cli(raw: str | None) -> List[int] | None:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if s == "" or s.lower() == "none":
+        return None
+    out: List[int] = []
+    for token in s.split(","):
+        t = token.strip()
+        if t == "":
+            continue
+        if t.startswith("+"):
+            t = t[1:]
+        if not t.isdigit():
+            raise ValueError(f"Invalid --classes token '{token}'. Use comma-separated non-negative integers.")
+        out.append(int(t))
+    if not out:
+        return None
+    return sorted(set(out))
 
 
 def auto_device(device_value: Any) -> Any:
@@ -183,6 +205,10 @@ def main() -> None:
     if val_value is None:
         val_value = DEFAULTS["val"]
 
+    classes_value = parse_classes_cli(args.classes)
+    if classes_value is None and "classes" in cfg:
+        classes_value = cfg.get("classes")
+
     project_value = pick("project", args.project, cfg)
     project_value = str(Path(project_value).expanduser().resolve())
 
@@ -201,6 +227,7 @@ def main() -> None:
         "cache": pick("cache", args.cache, cfg),
         "compile": pick("compile", True if args.compile else None, cfg),
         "val": val_value,
+        "classes": classes_value,
         "exist_ok": pick("exist_ok", True if args.exist_ok else None, cfg),
         "verbose": pick("verbose", True if args.verbose else None, cfg),
     }
