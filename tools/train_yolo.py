@@ -96,14 +96,35 @@ def pick(name: str, cli_value: Any, cfg: Dict[str, Any], *, required: bool = Fal
 
 
 def auto_device(device_value: Any) -> Any:
+    mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+    cuda_available = torch.cuda.is_available()
     if device_value is not None:
         s = str(device_value).strip()
         if s == "":
-            return 0 if torch.cuda.is_available() else "cpu"
+            if cuda_available:
+                return 0
+            if mps_available:
+                return "mps"
+            return "cpu"
+        if s.lower() == "mps":
+            if mps_available:
+                return "mps"
+            print("[WARN] Requested device='mps' but MPS is not available. Falling back to CPU.", flush=True)
+            return "cpu"
         if s.isdigit():
+            if not cuda_available:
+                print(f"[WARN] Requested CUDA device='{s}' but CUDA is not available. Falling back to CPU.", flush=True)
+                return "cpu"
             return int(s)
+        if s.lower().startswith("cuda") and not cuda_available:
+            print(f"[WARN] Requested device='{s}' but CUDA is not available. Falling back to CPU.", flush=True)
+            return "cpu"
         return s
-    return 0 if torch.cuda.is_available() else "cpu"
+    if cuda_available:
+        return 0
+    if mps_available:
+        return "mps"
+    return "cpu"
 
 
 def setup_torch_backends(device: Any) -> None:
@@ -202,6 +223,8 @@ def main() -> None:
     print("[INFO] Data:", data_value, flush=True)
     print("[INFO] Device:", device_value, flush=True)
     print("[INFO] torch.cuda.is_available:", torch.cuda.is_available(), flush=True)
+    mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+    print("[INFO] torch.backends.mps.is_available:", mps_available, flush=True)
     if torch.cuda.is_available():
         try:
             print("[INFO] CUDA device 0:", torch.cuda.get_device_name(0), flush=True)
