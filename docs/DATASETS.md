@@ -175,6 +175,8 @@ yolo-prepare-dataset \
 - class merging into a new name
 - empty-image behavior after label rewriting
 
+If the recipe requests no changes at all, the command fails fast instead of doing a meaningless in-place rewrite.
+
 ### Recipe example
 
 ```yaml

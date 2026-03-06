@@ -99,6 +99,16 @@ def _load_recipe(recipe_path: Path) -> PrepareRecipe:
     return recipe
 
 
+def _recipe_requests_mutation(recipe: PrepareRecipe, *, dataset_dir: Path) -> bool:
+    if recipe.train_fraction != 1.0 or recipe.val_fraction != 1.0:
+        return True
+    if recipe.keep_tokens or recipe.drop_tokens or recipe.remap_rules:
+        return True
+    if recipe.dataset_name and recipe.dataset_name != dataset_dir.name:
+        return True
+    return False
+
+
 def _remove_unselected_images(
     dataset_dir: Path,
     split: str,
@@ -328,6 +338,11 @@ def prepare_yolo_dataset(
     class_names = load_class_names(classes_path)
     if not class_names:
         raise PipelineError(f"No class names found in {classes_path}")
+    if not _recipe_requests_mutation(recipe, dataset_dir=dataset_dir):
+        raise PipelineError(
+            "Prepare recipe does not request any dataset changes.",
+            hint="Set train_fraction/val_fraction below 1.0, add keep/drop/remap rules, or change dataset_name.",
+        )
 
     log(format_info(f"Preparing YOLO dataset in place: {dataset_dir}"))
     log(format_info(f"Using recipe file: {options.recipe_path.resolve()}"))

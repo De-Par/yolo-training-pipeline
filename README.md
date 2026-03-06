@@ -300,6 +300,7 @@ Important behavior:
 - it does not create a second copy by default
 - this saves disk space but is destructive
 - if you need the original converted dataset back, rerun step 3
+- a recipe that requests no changes is rejected on purpose
 
 What gets updated in place:
 

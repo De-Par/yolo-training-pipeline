@@ -3,6 +3,7 @@
 #   yolo-prepare-dataset --dataset-dir data/converted/my_dataset --recipe configs/prepare/yolo_dataset.yaml
 #
 # This example is intentionally safe by default: it performs no class changes.
+# Because this command is destructive, an entirely empty recipe is rejected.
 # Uncomment or edit the sections below after inspecting the dataset with:
 #   yolo-print-stats --dataset-dir data/converted/my_dataset
 
@@ -46,3 +47,10 @@ classes:
   #     from: ["coat", "jacket"]
   #   - name: tops
   #     from: ["shirt, blouse", "top, t-shirt, sweatshirt", 2, 3, "30-35"]
+
+# To make this recipe do something, change at least one of:
+# - sampling.train_fraction / sampling.val_fraction
+# - classes.keep
+# - classes.drop
+# - classes.remap
+# - dataset_name

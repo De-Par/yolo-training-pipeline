@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from core.common.errors import PipelineError, format_pipeline_error
-from core.common.progress import ProgressCallback, create_progress_reporter
+from core.common.progress import ProgressCallback, create_progress_reporter, write_console_line
 
 
 T = TypeVar("T")
@@ -15,7 +15,7 @@ CliProgressAction = Callable[[ProgressCallback], T]
 
 
 def stdout_logger(message: str) -> None:
-    print(message, flush=True)
+    write_console_line(message, flush=True)
 
 
 def exit_with_pipeline_error(exc: PipelineError) -> "NoReturn":

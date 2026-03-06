@@ -204,6 +204,7 @@ classes:
 - this command mutates the dataset in place
 - it does not duplicate the dataset by default
 - if you want the original converted dataset again, rerun `yolo-convert-dataset`
+- a recipe that requests no changes is rejected on purpose
 
 <table>
   <tr>

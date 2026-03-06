@@ -7,6 +7,7 @@ from core.common.progress import (
     TqdmProgressReporter,
     create_progress_reporter,
     noop_progress_callback,
+    write_console_line,
 )
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "NullProgressReporter",
     "noop_progress_callback",
     "create_progress_reporter",
+    "write_console_line",
     "stdout_logger",
     "run_cli",
     "run_cli_with_progress",
