@@ -7,13 +7,13 @@ This guide documents the dataset side of the pipeline.
 
 ## Contents
 
-- [🧱 Stage Order](#-stage-order)
-- [🔄 Stage 3: Convert Raw Data](#-stage-3-convert-raw-data)
-- [📊 Stage 4: Print YOLO Dataset Stats](#-stage-4-print-yolo-dataset-stats)
-- [🧪 Stage 5: Prepare YOLO Dataset](#-stage-5-prepare-yolo-dataset)
-- [🧾 Dataset Layouts](#-dataset-layouts)
-- [🧪 Example Scenarios](#-example-scenarios)
-- [💡 Practical Advice](#-practical-advice)
+- [🧱 Stage Order](#stage-order)
+- [🔄 Stage 3: Convert Raw Data](#stage-3-convert-raw-data)
+- [📊 Stage 4: Print YOLO Dataset Stats](#stage-4-print-yolo-dataset-stats)
+- [🧪 Stage 5: Prepare YOLO Dataset](#stage-5-prepare-yolo-dataset)
+- [🧾 Dataset Layouts](#dataset-layouts)
+- [🧪 Example Scenarios](#example-scenarios)
+- [💡 Practical Advice](#practical-advice)
 
 <table>
   <tr>
@@ -126,7 +126,7 @@ This step reports:
 - missing or orphan labels
 - mean bbox geometry
 - object size bins
-- per-class train / val / total counts
+- per-class counts for every detected split plus totals
 
 It also writes:
 
@@ -139,6 +139,7 @@ and:
 ```text
 data/converted/my_dataset/dataset_stats_train.png
 data/converted/my_dataset/dataset_stats_val.png
+data/converted/my_dataset/dataset_stats_test.png   # if test exists
 ```
 
 This is the report you should use when deciding whether to:
@@ -158,6 +159,8 @@ The tracked starter recipe is:
 
 - [`configs/prepare/yolo_dataset.yaml`](../configs/prepare/yolo_dataset.yaml)
 
+Edit the recipe first. The tracked file is intentionally no-op by default and is rejected until you request a real split or class change.
+
 Example:
 
 ```bash
@@ -168,8 +171,9 @@ yolo-prepare-dataset \
 
 ### What preparation can change
 
-- `train` fraction
-- `val` fraction
+- split mode
+- `train` / `val` / optional `test` fractions
+- per-class minimum instances for `val` / `test`
 - class removal
 - class renaming
 - class merging into a new name
@@ -181,12 +185,18 @@ If the recipe requests no changes at all, the command fails fast instead of doin
 
 ```yaml
 dataset_name: my_dataset_prepared
-sample_seed: 42
 empty_policy: drop
 
-sampling:
+split:
+  mode: keep_existing
+  seed: 42
   train_fraction: 1.0
   val_fraction: 1.0
+  test_fraction: 0.0
+  min_val_instances_per_class: 0
+  min_test_instances_per_class: 0
+  per_class_min_val_instances: {}
+  per_class_min_test_instances: {}
 
 classes:
   keep: []
@@ -195,6 +205,15 @@ classes:
     - name: footwear
       from: [shoe, boot, sandal]
 ```
+
+Split modes:
+
+- `keep_existing`: preserve the current split boundaries
+- `sample_existing`: shrink the current splits independently
+- `resplit_combined_random`: merge the current splits and rebuild `train` / `val` / optional `test`
+- `resplit_combined_by_instances`: merge the current splits and guarantee minimum instance coverage in `val` / `test` before filling the target fractions
+
+For `per_class_min_*`, this project uses compact YAML flow-style mappings in examples, for example `{23: 50, "shirt, blouse": 30}`.
 
 Selector syntax:
 
@@ -207,6 +226,15 @@ If a class name contains commas, quote it exactly as written in `classes.txt`.
 Example:
 
 ```yaml
+split:
+  mode: resplit_combined_by_instances
+  seed: 42
+  train_fraction: 0.8
+  val_fraction: 0.1
+  test_fraction: 0.1
+  min_val_instances_per_class: 20
+  per_class_min_test_instances: {23: 50}
+
 classes:
   keep: ["shirt, blouse", 23, "30-35"]
   remap:
@@ -289,7 +317,8 @@ yolo-print-stats --dataset-dir data/converted/warehouse_items
 ### Scenario 3: create a smoke dataset by shrinking splits
 
 ```yaml
-sampling:
+split:
+  mode: sample_existing
   train_fraction: 0.01
   val_fraction: 0.1
 ```

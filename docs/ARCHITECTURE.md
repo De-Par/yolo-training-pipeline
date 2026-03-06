@@ -7,12 +7,12 @@ The project is structured around a strict separation between library code and CL
 
 ## Contents
 
-- [🗺️ High-Level Shape](#️-high-level-shape)
-- [📦 `core/`](#-core)
-- [🛠️ `tools/`](#️-tools)
-- [📜 `scripts/`](#-scripts)
-- [🎯 Design Rules](#-design-rules)
-- [📦 Packaging](#-packaging)
+- [🗺️ High-Level Shape](#high-level-shape)
+- [📦 `core/`](#core)
+- [🛠️ `tools/`](#tools)
+- [📜 `scripts/`](#scripts)
+- [🎯 Design Rules](#design-rules)
+- [📦 Packaging](#packaging)
 
 <table>
   <tr>

@@ -7,14 +7,14 @@ This guide covers the training side of the pipeline.
 
 ## Contents
 
-- [🚀 Main Entry Point](#-main-entry-point)
-- [⚙️ Tracked Config](#️-tracked-config)
-- [🧪 Training on Converted vs Prepared Datasets](#-training-on-converted-vs-prepared-datasets)
-- [🧩 Config + Override Pattern](#-config--override-pattern)
-- [📁 Training Outputs](#-training-outputs)
-- [📈 Per-Class AP Analysis](#-per-class-ap-analysis)
-- [💡 Practical Advice](#-practical-advice)
-- [🛠️ Common Failure Modes](#️-common-failure-modes)
+- [🚀 Main Entry Point](#main-entry-point)
+- [⚙️ Tracked Config](#tracked-config)
+- [🧪 Training on Converted vs Prepared Datasets](#training-on-converted-vs-prepared-datasets)
+- [🧩 Config + Override Pattern](#config-override-pattern)
+- [📁 Training Outputs](#training-outputs)
+- [📈 Per-Class AP Analysis](#per-class-ap-analysis)
+- [💡 Practical Advice](#practical-advice)
+- [🛠️ Common Failure Modes](#common-failure-modes)
 
 ## 🚀 Main Entry Point
 
@@ -103,11 +103,39 @@ yolo-report-ap \
   --device 0
 ```
 
+Terminology:
+
+- `AP` = `Average Precision`
+- `mAP` = `mean Average Precision`
+
+In detection, `AP` is computed per class from the precision/recall curve.
+`mAP` is the mean of those per-class AP values.
+
 This is especially useful when:
 
 - the dataset has a long tail
 - aggregate mAP hides dead classes
 - you need evidence for future recipe changes in `yolo-prepare-dataset`
+
+### `val` vs `test`
+
+Use `val` while you are still making decisions about:
+
+- split recipes
+- class merges/drops
+- model choice
+- training config
+
+Use `test` only for the final holdout check after those decisions are already fixed.
+
+If your dataset contains `test`, the final command should typically be:
+
+```bash
+yolo-report-ap \
+  --model runs/my_run/weights/best.pt \
+  --data data/converted/my_dataset/my_dataset.yaml \
+  --split test
+```
 
 ## 💡 Practical Advice
 

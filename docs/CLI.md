@@ -7,13 +7,13 @@ This document describes the current public CLI surface.
 
 ## Contents
 
-- [🚀 Public Commands](#-public-commands)
-- [🔄 `yolo-convert-dataset`](#-yolo-convert-dataset)
-- [📊 `yolo-print-stats`](#-yolo-print-stats)
-- [🧱 `yolo-prepare-dataset`](#-yolo-prepare-dataset)
-- [🏋️ `yolo-train`](#️-yolo-train)
-- [📈 `yolo-report-ap`](#-yolo-report-ap)
-- [🛟 Fallback Entry Points](#-fallback-entry-points)
+- [🚀 Public Commands](#public-commands)
+- [🔄 `yolo-convert-dataset`](#yolo-convert-dataset)
+- [📊 `yolo-print-stats`](#yolo-print-stats)
+- [🧱 `yolo-prepare-dataset`](#yolo-prepare-dataset)
+- [🏋️ `yolo-train`](#yolo-train)
+- [📈 `yolo-report-ap`](#yolo-report-ap)
+- [🛟 Fallback Entry Points](#fallback-entry-points)
 
 <table>
   <tr>
@@ -96,6 +96,7 @@ Print detailed stats for a YOLO-styled dataset.
 - `dataset_stats.json`
 - `dataset_stats_train.png`
 - `dataset_stats_val.png`
+- `dataset_stats_test.png` when the dataset contains `test`
 
 ### Syntax
 
@@ -109,7 +110,7 @@ yolo-print-stats --dataset-dir data/converted/my_dataset
 |---|:---:|---|
 | `--dataset-dir` | yes | YOLO-styled dataset directory |
 | `--output-json` | no | override JSON output path |
-| `--output-png` | no | override base PNG path, writes `<stem>_train.png` and `<stem>_val.png` |
+| `--output-png` | no | override base PNG path, writes one `<stem>_<split>.png` file per detected split |
 
 ### What it reports
 
@@ -120,8 +121,8 @@ yolo-print-stats --dataset-dir data/converted/my_dataset
 - total instance counts
 - mean bbox geometry
 - bbox area bins
-- per-class train / val / total counts
-- two split-specific mosaic PNG reports in the same style as the Ultralytics labels overview
+- per-class counts for every detected split plus totals
+- one split-specific mosaic PNG report per detected split in the same style as the Ultralytics labels overview
 
 <table>
   <tr>
@@ -137,7 +138,10 @@ This command is optional. After conversion, the dataset is already trainable.
 
 ### Main effects
 
-- reduce train/val splits by sampling
+- keep the current splits untouched
+- sample current splits independently
+- combine current splits and rebuild `train` / `val` / optional `test`
+- enforce minimum instance coverage in `val` / `test` during combined resplit
 - drop classes
 - rename classes
 - merge several old classes into a new class name
@@ -153,23 +157,31 @@ yolo-prepare-dataset \
   --recipe configs/prepare/yolo_dataset.yaml
 ```
 
+Edit the tracked recipe before running it. The default file is intentionally no-op and is rejected until it requests a real change.
+
 ### Important arguments
 
 | Option | Required | Description |
 |---|:---:|---|
 | `--dataset-dir` | yes | YOLO-styled dataset to mutate |
-| `--recipe` | yes | YAML recipe describing sampling and class transforms |
+| `--recipe` | yes | YAML recipe describing split management and class transforms |
 
 ### Recipe structure
 
 ```yaml
 dataset_name: my_dataset_prepared
-sample_seed: 42
 empty_policy: drop
 
-sampling:
+split:
+  mode: keep_existing
+  seed: 42
   train_fraction: 1.0
   val_fraction: 1.0
+  test_fraction: 0.0
+  min_val_instances_per_class: 0
+  min_test_instances_per_class: 0
+  per_class_min_val_instances: {}
+  per_class_min_test_instances: {}
 
 classes:
   keep: []
@@ -178,6 +190,15 @@ classes:
     - name: footwear
       from: [shoe, boot, sandal]
 ```
+
+Split modes:
+
+- `keep_existing`: keep current `train` / `val` / `test` boundaries
+- `sample_existing`: downsample current splits independently
+- `resplit_combined_random`: merge current splits and resplit by image fractions
+- `resplit_combined_by_instances`: merge current splits and satisfy `val` / `test` instance minimums before filling nominal fractions
+
+For `per_class_min_*`, the docs prefer compact YAML flow-style mappings such as `{23: 50, "shirt, blouse": 30}`.
 
 Selector syntax:
 
@@ -190,6 +211,15 @@ If a class name contains commas, quote it exactly as written in `classes.txt`.
 Example:
 
 ```yaml
+split:
+  mode: resplit_combined_by_instances
+  seed: 42
+  train_fraction: 0.8
+  val_fraction: 0.1
+  test_fraction: 0.1
+  min_val_instances_per_class: 20
+  per_class_min_test_instances: {23: 50}
+
 classes:
   keep: ["shirt, blouse", 23, "30-35"]
   remap:
@@ -204,6 +234,7 @@ classes:
 - this command mutates the dataset in place
 - it does not duplicate the dataset by default
 - if you want the original converted dataset again, rerun `yolo-convert-dataset`
+- combined resplit modes can create `test` when `split.test_fraction > 0`
 - a recipe that requests no changes is rejected on purpose
 
 <table>
@@ -251,6 +282,8 @@ Everything else should live in the training YAML config, for example:
 ## 📈 `yolo-report-ap`
 
 Run validation and export per-class AP metrics to CSV and JSON.
+
+`AP` means `Average Precision`. `mAP` means `mean Average Precision`.
 
 ### Syntax
 

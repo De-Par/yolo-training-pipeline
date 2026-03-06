@@ -236,7 +236,7 @@ yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
 
 What this prints:
 
-- train / val image counts
+- per-split image counts for `train`, `val`, and optional `test`
 - label file counts
 - missing / orphan label counts
 - empty label counts
@@ -244,7 +244,7 @@ What this prints:
 - mean bbox width / height / area
 - mean bbox center position
 - area bins for tiny / small / medium / large objects
-- a per-class table with train / val / total counts
+- a per-class table with one column set per detected split plus totals
 
 It also writes JSON by default:
 
@@ -252,11 +252,12 @@ It also writes JSON by default:
 data/converted/fashionpedia_demo/dataset_stats.json
 ```
 
-And it also writes two mosaic PNG reports:
+And it also writes one mosaic PNG report per detected split:
 
 ```text
 data/converted/fashionpedia_demo/dataset_stats_train.png
 data/converted/fashionpedia_demo/dataset_stats_val.png
+data/converted/fashionpedia_demo/dataset_stats_test.png   # if test exists
 ```
 
 This is the report you should look at before deciding what to change in the next step.
@@ -267,14 +268,16 @@ This step is optional. Use it only if you want to change the dataset itself.
 
 Typical reasons:
 
-- reduce `train` / `val` size
+- resplit `train` / `val` and optionally create `test`
+- satisfy minimum instance coverage in `val` / `test`
+- reduce existing splits for smoke runs
 - drop classes
 - rename classes
 - merge several old classes into a new class name
 
 Preparation is driven by a YAML recipe.
 
-Start from the example recipe:
+Start from the example recipe and edit it before running `yolo-prepare-dataset`:
 
 - [`configs/prepare/yolo_dataset.yaml`](configs/prepare/yolo_dataset.yaml)
 
@@ -377,6 +380,17 @@ This gives you:
 
 - CSV with one row per class
 - JSON with global metrics and per-class values
+
+Terminology:
+
+- `AP` = `Average Precision`
+- `mAP` = `mean Average Precision`
+
+In object detection, `AP` is the area under the precision/recall curve for one class.
+`mAP` is the mean of those AP values across classes.
+
+Use `val` while you are still tuning the pipeline.
+Use `test` only for the final holdout evaluation after the recipe, config, and model are already fixed.
 
 ### Command recap
 
