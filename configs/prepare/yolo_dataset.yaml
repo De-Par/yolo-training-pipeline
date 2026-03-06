@@ -1,0 +1,48 @@
+# Optional in-place preparation recipe for a YOLO-styled dataset.
+# Apply it with:
+#   yolo-prepare-dataset --dataset-dir data/converted/my_dataset --recipe configs/prepare/yolo_dataset.yaml
+#
+# This example is intentionally safe by default: it performs no class changes.
+# Uncomment or edit the sections below after inspecting the dataset with:
+#   yolo-print-stats --dataset-dir data/converted/my_dataset
+
+# Optional dataset name for the regenerated data.yaml file.
+# If omitted, the current dataset directory name is used.
+# dataset_name: my_dataset_prepared
+
+# Random seed used for split sampling.
+sample_seed: 42
+
+# Policy for images that become empty after class dropping/remapping:
+# - drop: remove empty image + label file
+# - keep: keep image and leave an empty label file
+empty_policy: drop
+
+sampling:
+  train_fraction: 1.0
+  val_fraction: 1.0
+
+classes:
+  # Optional selectors to keep before remapping. If omitted, all classes are kept.
+  # Selector forms:
+  # - exact class names, for example: "shirt, blouse"
+  # - class ids, for example: 23
+  # - id ranges, for example: "30-35"
+  keep: []
+
+  # Optional selectors to remove before remapping.
+  drop: []
+
+  # Remap and merge old classes into new class names.
+  # A rule with one source class acts like a rename.
+  # 'from' accepts the same selector forms as keep/drop.
+  remap: []
+
+  # Example:
+  # remap:
+  #   - name: footwear
+  #     from: [23]
+  #   - name: outerwear
+  #     from: ["coat", "jacket"]
+  #   - name: tops
+  #     from: ["shirt, blouse", "top, t-shirt, sweatshirt", 2, 3, "30-35"]

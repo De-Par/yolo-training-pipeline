@@ -8,10 +8,10 @@ cd "${PROJECT_ROOT}"
 
 usage() {
     cat <<'EOF'
-Download raw datasets for YOLO26 pipeline
+Download demo clothes datasets for the repository
 
 Usage:
-  scripts/download_datasets.sh [--dataset all|fashionpedia|deepfashion2] [--out-dir data/raw]
+  scripts/download_clothes_dataset.sh [--dataset all|fashionpedia|deepfashion2] [--out-dir data/raw]
 
 Environment variables for DeepFashion2 mode:
   DEEPFASHION2_URLS       Space-separated direct archive URLs for DeepFashion2 files
@@ -220,7 +220,7 @@ EOF
         fi
     }
 
-    find "$unpack" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | while IFS= read -r f; do
+    while IFS= read -r f; do
         case "$f" in
         *train*/*image*|*train*/image/*)
             copy_file_safe "$f" "$root/train/image" "img"
@@ -229,9 +229,9 @@ EOF
             copy_file_safe "$f" "$root/validation/image" "img"
             ;;
         esac
-    done
+    done < <(find "$unpack" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \))
 
-    find "$unpack" -type f -name '*.json' | while IFS= read -r f; do
+    while IFS= read -r f; do
         case "$f" in
         *train*/*anno*|*train*/annos/*)
             copy_file_safe "$f" "$root/train/annos" "ann"
@@ -240,7 +240,7 @@ EOF
             copy_file_safe "$f" "$root/validation/annos" "ann"
             ;;
         esac
-    done
+    done < <(find "$unpack" -type f -name '*.json')
 
     local train_img_count val_img_count train_ann_count val_ann_count
     train_img_count="$(find "$root/train/image" -type f | wc -l | tr -d ' ')"

@@ -1,445 +1,491 @@
-# 🧠 YOLO Training Pipeline
+# YOLO Training Pipeline
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#)
-[![Ultralytics](https://img.shields.io/badge/Ultralytics%20trainer-YOLO-red)](#)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20WSL2%20%7C%20macOS-green)](#)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Ultralytics](https://img.shields.io/badge/ultralytics-YOLO-red)
+![Status](https://img.shields.io/badge/status-generic%20pipeline-brightgreen)
 
-Practical scripts to **prepare datasets** and **train Ultralytics YOLO** models for **object detection** across multiple generations  
-(e.g. **YOLOv3 / YOLOv5 / YOLOv8 / YOLO11 / YOLO26**).
+A generic pipeline for converting raw detection datasets into YOLO format, inspecting YOLO-styled datasets, optionally mutating them with a recipe, training Ultralytics YOLO models, and exporting per-class AP reports.
 
-This repo is intentionally split into **two independent steps**:
+---
 
-1) **Prepare dataset** → convert annotations to YOLO format + generate `data.yaml`  
-2) **Train model** → run `ultralytics.YOLO(...).train()` using CLI args and/or YAML config
+**Navigation**
+[`Home`](README.md) · [`Datasets`](docs/DATASETS.md) · [`Training`](docs/TRAINING.md) · [`CLI`](docs/CLI.md) · [`Architecture`](docs/ARCHITECTURE.md)
 
+<table>
+  <tr>
+    <td><strong>💡 Tip</strong><br>The repository is organized around a strict order of stages. Read this page first, then follow the commands in the same order.</td>
+  </tr>
+</table>
 
-## Contents
+```mermaid
+flowchart LR
+    A["1. Setup environment"]
+    B["2. Download assets"]
+    C["3. Convert dataset"]
+    D["4. Print dataset stats"]
+    E["5. Prepare dataset (optional)"]
+    F["6. Train model"]
+    G["7. Export AP report"]
 
-- [Features](#features)
-- [Quick start](#quick-start)
-- [Environment setup](#environment-setup)
-- [Download helpers](#download-helpers)
-    - [Download YOLO weights](#download-yolo-weights)
-    - [Download datasets](#download-datasets)
-- [Prepare datasets](#prepare-datasets)
-    - [Fashionpedia](#prepare-fashionpedia)
-    - [DeepFashion2](#prepare-deepfashion2)
-    - [Custom COCO](#prepare-custom-coco)
-    - [Sampling subsets](#sampling-subsets)
-    - [Output format](#output-format)
-    - [CLI reference: prepare_dataset.py](#cli-reference-prepare_datasetpy)
-- [Train models](#train-models)
-    - [Train with CLI](#train-with-cli)
-    - [Train with YAML config](#train-with-yaml-config)
-    - [CLI reference: train_yolo.py](#cli-reference-train_yolopy)
-- [Performance notes](#performance-notes)
-- [Troubleshooting](#troubleshooting)
-
-
-## Features
-
-- ✅ Works with **multiple YOLO generations** (not tied to a single checkpoint family)
-- ✅ Prepare **Fashionpedia**, **DeepFashion2**, and **custom COCO**
-- ✅ Training supports **YAML configs** + **CLI overrides**
-- ✅ Conversion reporting: missing images / ambiguous basenames (COCO modes)
-
-
-## Quick start
-
-```bash
-# 1) Create venv & install dependencies
-source scripts/setup_env.sh
-
-# 2) Download a model
-./scripts/download_models.sh --generation v26 --task detect --size n
-
-# 3) Download a dataset 
-./scripts/download_datasets.sh --dataset fashionpedia
-
-# 4) Prepare dataset
-python tools/prepare_dataset.py \
-    --dataset fashionpedia \
-    --raw-root data/raw/fashionpedia \
-    --workdir data/processed \
-    --train-fraction 0.1 \
-    --val-fraction 0.2
-
-# 5) Train model (GPU)
-python tools/train_yolo.py \
-    --data data/processed/fashionpedia/fashionpedia.yaml \
-    --model models/YOLOv26/yolo26n.pt \
-    --device 0 --amp --cache disk --batch 32 --workers 12
+    A --> B --> C --> D
+    D -->|"train directly"| F
+    D -->|"modify dataset"| E --> F
+    F --> G
 ```
 
+## ✨ Pipeline Order
 
-## Environment setup
+The intended pipeline is:
 
-- Python: use `python3 -m venv .venv`
-- Install deps: `pip install -r requirements.txt`
-- Recommended: run everything inside the repo root
+1. create an isolated environment
+2. download model weights and raw dataset files
+3. convert the raw dataset into a YOLO-styled dataset without changing its semantics
+4. print statistics for the YOLO-styled dataset and decide what needs to change
+5. optionally mutate the YOLO-styled dataset in place using a YAML recipe
+6. train a YOLO model from config or CLI
+7. collect weights and validation reports
 
+This split is intentional:
 
-## Download helpers
+- `core/` contains business logic
+- `tools/` contains CLI only
+- `scripts/` contains automation and demo shell flows
 
-### Download YOLO weights
+More detail: [Architecture](docs/ARCHITECTURE.md)
 
-Use `scripts/download_models.sh`:
+## 🧭 Documentation Map
 
-```bash
-# Download all weights for YOLOv26 -> models/YOLOv26/
-./scripts/download_models.sh --generation v26
-
-# Only detection models
-./scripts/download_models.sh --generation v26 --task detect
-
-# Only selected sizes
-./scripts/download_models.sh --generation v26 --size n,s
-
-# Preview without downloading
-./scripts/download_models.sh --generation v26 --dry-run
-```
-
-Model size suffixes:
-
-| Suffix | Meaning |
+| I want to... | Go here |
 |---|---|
-| `n` | nano |
-| `s` | small |
-| `m` | medium |
-| `l` | large |
-| `x` | extra-large |
+| understand the dataset flow | [Dataset Guide](docs/DATASETS.md) |
+| see exact commands and flags | [CLI Reference](docs/CLI.md) |
+| run training and analyze metrics | [Training Guide](docs/TRAINING.md) |
+| understand the code layout | [Architecture](docs/ARCHITECTURE.md) |
+| inspect the tracked NVIDIA preset | [`configs/train/nvidia.yaml`](configs/train/nvidia.yaml) |
+| inspect the prepare recipe format | [`configs/prepare/yolo_dataset.yaml`](configs/prepare/yolo_dataset.yaml) |
 
-### Download datasets
+## ✅ Public CLI Surface
 
-#### Fashionpedia (fully automated)
+Installable commands from `pyproject.toml`:
 
-```bash
-./scripts/download_datasets.sh --dataset fashionpedia
+| Command | Purpose |
+|---|---|
+| `yolo-convert-dataset` | Convert raw annotations into a YOLO-styled dataset |
+| `yolo-print-stats` | Print detailed stats for a YOLO-styled dataset |
+| `yolo-prepare-dataset` | Mutate a YOLO-styled dataset in place using a YAML recipe |
+| `yolo-train` | Launch Ultralytics training |
+| `yolo-report-ap` | Export per-class AP metrics |
+
+Supported raw input adapters today:
+
+- `coco-detection`
+- `per-image-json`
+
+<table>
+  <tr>
+    <td><strong>📝 Note</strong><br>The pipeline is dataset-generic. Dataset-specific names such as Fashionpedia appear only in examples and demo scripts.</td>
+  </tr>
+</table>
+
+## 📁 Project Layout
+
+```text
+.
+├── configs/
+│   ├── prepare/
+│   │   └── yolo_dataset.yaml
+│   └── train/
+│       └── nvidia.yaml
+├── core/
+│   ├── common/
+│   ├── datasets/
+│   └── training/
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── CLI.md
+│   ├── DATASETS.md
+│   └── TRAINING.md
+├── scripts/
+│   ├── download_clothes_dataset.sh
+│   ├── download_yolo_models.sh
+│   └── setup_env.sh
+├── tools/
+│   ├── convert_dataset_to_yolo.py
+│   ├── prepare_yolo_dataset.py
+│   ├── print_yolo_dataset_stats.py
+│   ├── report_ap.py
+│   └── train.py
+├── pyproject.toml
 ```
 
-#### DeepFashion2 (semi-automated)
+## 🚀 Quick Start
+
+This is a full demo flow on `Fashionpedia`, from zero to the first training run.
+
+### 1. Create the environment
+
+Create a virtual environment isolated from the system Python and install project dependencies:
 
 ```bash
-mkdir -p data/raw/deepfashion2/downloads
-./scripts/download_datasets.sh --dataset deepfashion2
+source scripts/setup_env.sh
 ```
 
-Optionally provide URLs/password:
+What `setup_env.sh` does:
+
+- creates `.venv`
+- upgrades `pip`, `setuptools`, and `wheel` inside `.venv`
+- installs the project from `pyproject.toml`
+- activates `.venv` in the current shell
+- exposes the `yolo-*` commands through editable install
+
+Quick sanity check:
 
 ```bash
-export DEEPFASHION2_URLS="https://.../train.zip https://.../validation.zip"
-export DEEPFASHION2_PASSWORD="<password_if_needed>"
-./scripts/download_datasets.sh --dataset deepfashion2
+yolo-convert-dataset --help
+yolo-print-stats --help
+yolo-prepare-dataset --help
+yolo-train --help
+yolo-report-ap --help
 ```
 
+<table>
+  <tr>
+    <td><strong>⚠️ Warning</strong><br>Run <code>source scripts/setup_env.sh</code>, not <code>bash scripts/setup_env.sh</code>, if you want the environment to stay active in the current shell.</td>
+  </tr>
+</table>
 
-## Prepare datasets
+### 2. Download model weights and raw Fashionpedia data
 
-The prepare step converts annotations and generates a YOLO-ready folder with:
+Download a YOLO checkpoint that you want to fine-tune:
 
-- `images/train`, `images/val`
-- `labels/train`, `labels/val`
+```bash
+./scripts/download_yolo_models.sh --generation v26 --task detect --size n
+```
+
+Typical resulting path:
+
+```text
+models/YOLOv26/yolo26n.pt
+```
+
+Then download the demo dataset:
+
+```bash
+./scripts/download_clothes_dataset.sh --dataset fashionpedia
+```
+
+Expected raw layout:
+
+```text
+data/raw/fashionpedia/
+├── train/
+│   ├── annotations.json
+│   └── images/
+└── val/
+    ├── annotations.json
+    └── images/
+```
+
+Quick sanity check:
+
+```bash
+ls data/raw/fashionpedia/train
+ls data/raw/fashionpedia/val
+```
+
+### 3. Convert Fashionpedia to YOLO format
+
+This stage only converts the raw schema into a YOLO-styled dataset. It should not change class semantics or act as an optimizer stage.
+
+```bash
+yolo-convert-dataset \
+  --dataset-name fashionpedia_demo \
+  --input-format coco-detection \
+  --train-images-dir data/raw/fashionpedia/train/images \
+  --train-annotations data/raw/fashionpedia/train/annotations.json \
+  --val-images-dir data/raw/fashionpedia/val/images \
+  --val-annotations data/raw/fashionpedia/val/annotations.json \
+  --output-root data/converted \
+  --clean
+```
+
+Expected output:
+
+```text
+data/converted/fashionpedia_demo/
+├── classes.txt
+├── conversion_report_train.json
+├── conversion_report_val.json
+├── fashionpedia_demo.yaml
+├── images/
+└── labels/
+```
+
+Important point:
+
+- after this step you already have a trainable YOLO-styled dataset
+- if you do not need any class surgery or split changes, you can train directly on `fashionpedia_demo.yaml`
+
+### 4. Print stats for the YOLO-styled dataset
+
+This is the analysis step. Use it before touching the dataset.
+
+```bash
+yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
+```
+
+What this prints:
+
+- train / val image counts
+- label file counts
+- missing / orphan label counts
+- empty label counts
+- total instances
+- mean bbox width / height / area
+- mean bbox center position
+- area bins for tiny / small / medium / large objects
+- a per-class table with train / val / total counts
+
+It also writes JSON by default:
+
+```text
+data/converted/fashionpedia_demo/dataset_stats.json
+```
+
+And it also writes two mosaic PNG reports:
+
+```text
+data/converted/fashionpedia_demo/dataset_stats_train.png
+data/converted/fashionpedia_demo/dataset_stats_val.png
+```
+
+This is the report you should look at before deciding what to change in the next step.
+
+### 5. Optionally prepare the YOLO-styled dataset in place
+
+This step is optional. Use it only if you want to change the dataset itself.
+
+Typical reasons:
+
+- reduce `train` / `val` size
+- drop classes
+- rename classes
+- merge several old classes into a new class name
+
+Preparation is driven by a YAML recipe.
+
+Start from the example recipe:
+
+- [`configs/prepare/yolo_dataset.yaml`](configs/prepare/yolo_dataset.yaml)
+
+Selector syntax in the recipe:
+
+- exact class names, for example `"shirt, blouse"`
+- numeric class ids, for example `23`
+- id ranges, for example `"30-35"`
+
+If a class name contains commas, quote it exactly as written in `classes.txt`.
+
+Apply it like this:
+
+```bash
+yolo-prepare-dataset \
+  --dataset-dir data/converted/fashionpedia_demo \
+  --recipe configs/prepare/yolo_dataset.yaml
+```
+
+Important behavior:
+
+- this step mutates the YOLO-styled dataset in place
+- it does not create a second copy by default
+- this saves disk space but is destructive
+- if you need the original converted dataset back, rerun step 3
+
+What gets updated in place:
+
+- images removed by split sampling
+- labels rewritten after class drops / remaps / merges
 - `classes.txt`
-- `<dataset_name>.yaml` (Ultralytics `data.yaml`)
+- `<dataset>.yaml`
+- `prepare_report.json`
 
-### Prepare Fashionpedia
-
-Expected raw layout:
-
-```text
-<RAW_ROOT>/
-  train/
-    images/
-    annotations.json
-  val/
-    images/
-    annotations.json
-```
-
-Command:
+Recommended follow-up after preparation:
 
 ```bash
-python tools/prepare_dataset.py \
-    --dataset fashionpedia \
-    --raw-root data/raw/fashionpedia \
-    --workdir data/processed
+yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
 ```
 
-### Prepare DeepFashion2
+### 6. Launch training
 
-Expected raw layout:
+The tracked NVIDIA preset is here:
 
-```text
-<RAW_ROOT>/
-  train/
-    image/
-    annos/
-  validation/
-    image/
-    annos/
-```
+- [`configs/train/nvidia.yaml`](configs/train/nvidia.yaml)
 
-Command:
-
-```bash
-python tools/prepare_dataset.py \
-    --dataset deepfashion2 \
-    --raw-root data/raw/deepfashion2 \
-    --workdir data/processed
-```
-
-### Prepare custom COCO
-
-Use this if you have COCO JSON (`images`, `annotations`, `categories`):
-
-```bash
-python tools/prepare_dataset.py \
-    --dataset custom-coco \
-    --custom-name my_dataset \
-    --train-images-dir /path/to/train/images \
-    --train-annotations /path/to/train_annotations.json \
-    --val-images-dir /path/to/val/images \
-    --val-annotations /path/to/val_annotations.json \
-    --workdir data/processed
-```
-
-COCO JSON requirements:
-- `images`: `id`, `file_name`, `width`, `height`
-- `annotations`: `image_id`, `category_id`, `bbox` (XYWH)
-- `categories`: `id`, `name`
-
-Converter behavior:
-- remaps non-contiguous category IDs to contiguous YOLO IDs
-- tries recursive basename lookup for missing `images_dir/file_name`
-- skips ambiguous duplicate basenames and reports them
-
-### Sampling subsets
-
-For quick experiments you can prepare only a fraction of train/val:
-
-```bash
-python tools/prepare_dataset.py \
-    --dataset fashionpedia \
-    --raw-root data/raw/fashionpedia \
-    --workdir data/processed \
-    --train-fraction 0.1 \
-    --val-fraction 0.2 \
-    --sample-seed 42
-```
-
-### Output format
-
-```text
-data/processed/<dataset_name>/
-  images/train/
-  images/val/
-  labels/train/
-  labels/val/
-  classes.txt
-  <dataset_name>.yaml
-```
-
-YOLO label row format:
-
-```text
-<class_id> <x_center> <y_center> <width> <height>
-```
-
-Rules:
-- normalized coordinates `[0, 1]`
-- `class_id` is zero-based
-- label stem must match image stem
-
-### Filter prepared dataset by classes
-
-If you want to train on a subset of classes (for example only `shoe`), create a filtered YOLO dataset:
-
-```bash
-python tools/filter_yolo_dataset_classes.py \
-    --src data/processed/fashionpedia \
-    --dst data/processed/fashionpedia_shoes \
-    --class-names shoe
-```
-
-By default, images with no remaining boxes are dropped.  
-Use `--keep-empty` to keep them as background negatives.
-
-Then train with the filtered dataset YAML:
-
-```bash
-python tools/train_yolo.py \
-    --model models/YOLOv26/yolo26m.pt \
-    --data data/processed/fashionpedia_shoes/fashionpedia_shoes.yaml
-```
-
-
-## CLI reference: prepare_dataset.py
-
-> Run `python tools/prepare_dataset.py --help` for the authoritative list.
-
-| Argument | Type | Required | Default | Description |
-|---|---:|:---:|---:|---|
-| `--dataset` | enum | ✅ | – | `fashionpedia` / `deepfashion2` / `custom-coco` |
-| `--raw-root` | path | ⚠️ | – | Required for `fashionpedia` and `deepfashion2` |
-| `--workdir` | path | ❌ | `data/processed` | Output root for processed dataset |
-| `--link-mode` | enum | ❌ | `symlink` | `symlink` or `copy` for images |
-| `--train-fraction` | float | ❌ | `1.0` | Fraction of train split to prepare `(0,1]` |
-| `--val-fraction` | float | ❌ | `1.0` | Fraction of val split to prepare `(0,1]` |
-| `--sample-seed` | int | ❌ | `42` | Deterministic sampling seed |
-| `--custom-name` | str | ❌ | `custom` | Dataset folder name for `custom-coco` |
-| `--train-images-dir` | path | ⚠️ | – | `custom-coco`: train images dir |
-| `--train-annotations` | path | ⚠️ | – | `custom-coco`: train COCO JSON |
-| `--val-images-dir` | path | ⚠️ | – | `custom-coco`: val images dir |
-| `--val-annotations` | path | ⚠️ | – | `custom-coco`: val COCO JSON |
-
-⚠️ “Required” depends on `--dataset` mode.
-
-
-## Train models
-
-Training is handled by `tools/train_yolo.py`.
-
-It supports:
-- **CLI-only**
-- **YAML config (`--cfg`)**
-- **YAML + CLI overrides**
-- warnings for **unsupported YAML keys** (ignored)
-
-### Train with CLI
-
-```bash
-python tools/train_yolo.py \
-    --data data/processed/fashionpedia/fashionpedia.yaml \
-    --model models/YOLOv26/yolo26n.pt \
-    --device 0 --amp --batch 32 --workers 12
-```
-
-### Train with YAML config
-
-Minimal config (`configs/config.example.yaml`) can contain `model:` and `data:`:
-
-```bash
-python tools/train_yolo.py --cfg configs/config.example.yaml
-```
-
-### YAML + CLI override
-
-```bash
-python tools/train_yolo.py \
-    --cfg configs/config.example.yaml \
-    --batch 48 --device 0 --cache ram --compile
-```
-
-Train only specific class IDs without rebuilding dataset:
-
-```bash
-python tools/train_yolo.py \
-    --cfg configs/config.cuda.maxacc.yaml \
-    --classes 23
-```
-
-### Ready hardware presets
-
-High-accuracy presets for clothing detection are included:
-
-- `configs/config.cuda.maxacc.yaml` (NVIDIA CUDA)
-- `configs/config.mps.maxacc.yaml` (Apple Silicon MPS)
-
-Run:
-
-```bash
-python tools/train_yolo.py --cfg configs/config.cuda.maxacc.yaml
-# or
-python tools/train_yolo.py --cfg configs/config.mps.maxacc.yaml
-```
-
-### Per-class AP report
-
-To inspect long-tail quality and identify weak classes, run:
-
-```bash
-python tools/report_per_class_ap.py \
-    --model runs/train/<run_name>/weights/best.pt \
-    --data data/processed/fashionpedia/fashionpedia.yaml \
-    --split val --imgsz 896 --batch 8 --device mps
-```
-
-Reports are saved to `runs/analysis/` as CSV and JSON.
-
-
-## CLI reference: train_yolo.py
-
-> Run `python tools/train_yolo.py --help` for the authoritative list.
-
-| Argument | Type | Required | Default | Description |
-|---|---:|:---:|---:|---|
-| `--cfg` | path | ❌ | – | YAML config with train parameters |
-| `--data` | path | ⚠️ | – | Dataset `data.yaml` (can be taken from YAML cfg) |
-| `--model` | path | ⚠️ | – | Model `.pt`/`.yaml` (can be taken from YAML cfg) |
-| `--epochs` | int | ❌ | `100` | Training epochs |
-| `--imgsz` | int | ❌ | `640` | Image size |
-| `--batch` | int | ❌ | `32` | Batch size |
-| `--device` | str/int | ❌ | auto | `0`, `cpu`, `cuda:0`, etc. |
-| `--workers` | int | ❌ | `12` | Dataloader workers |
-| `--classes` | str | ❌ | – | Comma-separated class IDs for train filter, e.g. `23` or `0,2,5` |
-| `--project` | str | ❌ | `runs/train` | Output base directory |
-| `--name` | str | ❌ | `yolo-run` | Run name |
-| `--seed` | int | ❌ | `42` | Random seed |
-| `--amp` | flag | ❌ | YAML/true | Enable AMP |
-| `--no-amp` | flag | ❌ | – | Disable AMP |
-| `--cache` | enum | ❌ | – | `ram` / `disk` |
-| `--compile` | flag | ❌ | `false` | Enable `torch.compile` (if supported) |
-| `--no-val` | flag | ❌ | – | Disable validation |
-| `--exist-ok` | flag | ❌ | `false` | Don’t increment run folder name |
-| `--verbose` | flag | ❌ | `false` | Extra logs |
-
-⚠️ `--data` and `--model` are required **unless** provided in `--cfg`.
-
-
-## Performance notes
-
-### WSL / disks
-
-- Avoid training from `/mnt/c/...` (NTFS bridge overhead).
-- Prefer:
-    - code in `~/...` (Linux FS), and
-    - datasets on `/mnt/e/...` (SSD) if too large for Linux FS.
-
-Suggested layout:
-
-```text
-~/projects/yolo-train
-/mnt/e/datasets/...
-/mnt/e/models/...
-```
-
-### NVIDIA GPU
-
-Recommended baseline:
+At minimum, make sure these fields point to the dataset and checkpoint you want:
 
 ```yaml
-device: 0
-amp: true
-cache: ram
-batch: 32
-workers: 12
-imgsz: 640
-epochs: 100
+model: models/YOLOv26/yolo26n.pt
+data: data/converted/fashionpedia_demo/fashionpedia_demo.yaml
 ```
 
-If you hit OOM:
-1) reduce `batch`
-2) then reduce `imgsz`
-3) then turn off `cache: ram`
+Then start training:
 
+```bash
+yolo-train --cfg configs/train/nvidia.yaml
+```
 
-## Troubleshooting
+Or override from CLI:
 
-- **Prepared dataset has zero train/val images**
-    - Check dataset paths and expected raw structure.
-- **Missing images warnings in COCO mode**
-    - `file_name` in JSON may not match files on disk.
-- **OOM / CUDA out of memory**
-    - Reduce `batch`, then `imgsz`.
-- **Config key ignored**
-    - `train_yolo.py` prints warnings if YAML contains keys unsupported by your Ultralytics version.
+```bash
+yolo-train \
+  --cfg configs/train/nvidia.yaml \
+  --model models/YOLOv26/yolo26n.pt \
+  --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
+  --name fashionpedia-demo-run
+```
+
+Typical training outputs:
+
+```text
+runs/<name>/
+├── args.yaml
+├── results.csv
+└── weights/
+    ├── best.pt
+    └── last.pt
+```
+
+### 7. Export per-class AP after training
+
+After training, export validation metrics by class:
+
+```bash
+yolo-report-ap \
+  --model runs/fashionpedia-demo-run/weights/best.pt \
+  --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
+  --split val
+```
+
+Default output location:
+
+```text
+runs/analysis/
+```
+
+This gives you:
+
+- CSV with one row per class
+- JSON with global metrics and per-class values
+
+### Command recap
+
+```bash
+source scripts/setup_env.sh
+
+./scripts/download_yolo_models.sh --generation v26 --task detect --size n
+./scripts/download_clothes_dataset.sh --dataset fashionpedia
+
+yolo-convert-dataset \
+  --dataset-name fashionpedia_demo \
+  --input-format coco-detection \
+  --train-images-dir data/raw/fashionpedia/train/images \
+  --train-annotations data/raw/fashionpedia/train/annotations.json \
+  --val-images-dir data/raw/fashionpedia/val/images \
+  --val-annotations data/raw/fashionpedia/val/annotations.json \
+  --clean
+
+yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
+
+yolo-prepare-dataset \
+  --dataset-dir data/converted/fashionpedia_demo \
+  --recipe configs/prepare/yolo_dataset.yaml
+
+yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
+
+yolo-train \
+  --cfg configs/train/nvidia.yaml \
+  --model models/YOLOv26/yolo26n.pt \
+  --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
+  --name fashionpedia-demo-run
+
+yolo-report-ap \
+  --model runs/fashionpedia-demo-run/weights/best.pt \
+  --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
+  --split val
+```
+
+## 🧩 Design Intent
+
+The dataset pipeline has three distinct dataset-facing stages.
+
+### Stage 3: conversion
+
+`yolo-convert-dataset` absorbs raw schema differences and produces a clean YOLO-styled dataset.
+
+It should not:
+
+- drop classes for experimentation
+- merge labels for task design
+- act as a tuning stage
+
+### Stage 4: stats
+
+`yolo-print-stats` is the inspection stage.
+
+Use it to answer questions like:
+
+- which classes dominate?
+- how many empty labels exist?
+- how many tiny objects exist?
+- how strong is the train/val imbalance?
+- which classes should be merged or removed?
+
+### Stage 5: preparation
+
+`yolo-prepare-dataset` is the mutation stage.
+
+It is optional because after conversion you already have a valid YOLO dataset.
+
+Use it only when you intentionally want to change the dataset itself.
+
+## 🛠️ Demo Scripts
+
+`scripts/` is not the canonical pipeline interface.
+
+Use it for:
+
+- environment setup
+- demo dataset download
+- demo model download
+
+The canonical pipeline interface is the installable CLI from `pyproject.toml`.
+
+## 💡 Practical Advice
+
+### Use stats before prepare
+
+Do not merge or drop classes blindly.
+
+The intended order is:
+
+1. convert
+2. print stats
+3. decide changes
+4. prepare
+5. print stats again
+6. train
+
+### Treat `prepare` as destructive
+
+Because `yolo-prepare-dataset` mutates the dataset in place, treat the converted dataset as a working copy.
+
+If you want a pristine version again, rerun `yolo-convert-dataset`.
+
+### Keep training config stable
+
+Use YAML for stable defaults and CLI only for small temporary overrides.
+
+---
+
+**Next**
+[`Dataset Guide`](docs/DATASETS.md) · [`CLI Reference`](docs/CLI.md) · [`Training Guide`](docs/TRAINING.md)

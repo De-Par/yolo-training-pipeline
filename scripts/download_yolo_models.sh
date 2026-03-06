@@ -11,11 +11,11 @@ usage() {
 Download all YOLO model weights (.pt) for a specific generation (v3, v4, ..., v26)
 
 Examples:
-  ./scripts/download_models.sh --generation v26
-  ./scripts/download_models.sh --generation 5 --release-tag v8.4.0
-  ./scripts/download_models.sh --generation v26 --size n
-  ./scripts/download_models.sh --generation v26 --size n,s --task detect
-  ./scripts/download_models.sh --generation v26 --task detect --dry-run
+  ./scripts/download_yolo_models.sh --generation v26
+  ./scripts/download_yolo_models.sh --generation 5 --release-tag v8.4.0
+  ./scripts/download_yolo_models.sh --generation v26 --size n
+  ./scripts/download_yolo_models.sh --generation v26 --size n,s --task detect
+  ./scripts/download_yolo_models.sh --generation v26 --task detect --dry-run
 
 Options:
   --generation <vN|N>   Required. Generation number with or without 'v' prefix

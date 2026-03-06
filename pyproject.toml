@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yolo-train-pipeline"
+version = "0.1.0"
+description = "Generic dataset conversion, preparation, and training pipeline for Ultralytics YOLO"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "ultralytics>=8.3.0",
+  "pyyaml>=6.0",
+  "tqdm>=4.66.0",
+  "opencv-python>=4.10.0",
+  "matplotlib>=3.8.0",
+  "pillow>=10.0.0",
+]
+
+[project.scripts]
+yolo-convert-dataset = "tools.convert_dataset_to_yolo:main"
+yolo-print-stats = "tools.print_yolo_dataset_stats:main"
+yolo-prepare-dataset = "tools.prepare_yolo_dataset:main"
+yolo-train = "tools.train:main"
+yolo-report-ap = "tools.report_ap:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["core*", "tools*"]
+exclude = ["data*", "models*", "runs*", "configs*", "scripts*"]

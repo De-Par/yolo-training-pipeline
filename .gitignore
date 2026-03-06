@@ -13,9 +13,11 @@ __pycache__/
 *.py[cod]
 *.pyd
 *.so
+.cache/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.matplotlib/
 .coverage
 .coverage.*
 htmlcov/
@@ -48,6 +50,3 @@ Thumbs.db
 # Optional local config overrides
 .env
 .env.*
-
-# Keep example configs tracked
-!configs/*.example.yaml
