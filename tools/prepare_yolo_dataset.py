@@ -17,7 +17,12 @@ from core.datasets.prepare_yolo_dataset import PrepareYoloDatasetOptions, prepar
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Apply an in-place preparation recipe to a YOLO-styled dataset.")
     parser.add_argument("--dataset-dir", type=Path, required=True, help="Path to the YOLO-styled dataset directory to modify.")
-    parser.add_argument("--recipe", type=Path, required=True, help="YAML file describing sampling, class drops, and class remaps.")
+    parser.add_argument(
+        "--recipe",
+        type=Path,
+        required=True,
+        help="YAML file describing split management, class drops, and class remaps.",
+    )
     return parser.parse_args()
 
 

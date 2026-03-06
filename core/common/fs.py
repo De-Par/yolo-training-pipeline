@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 
 from pathlib import Path
@@ -23,3 +24,10 @@ def clean_split_dirs(images_out: Path, labels_out: Path) -> None:
         shutil.rmtree(images_out)
     if labels_out.exists():
         shutil.rmtree(labels_out)
+
+
+def ensure_local_mplconfigdir() -> Path:
+    mpl_cache_dir = (Path(".cache") / "matplotlib").resolve()
+    mpl_cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(mpl_cache_dir))
+    return mpl_cache_dir

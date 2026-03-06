@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
         "--output-png",
         type=Path,
         default=None,
-        help="Optional base PNG output path. Writes <stem>_train.png and <stem>_val.png. Defaults to <dataset-dir>/dataset_stats.png",
+        help="Optional base PNG output path. Writes one mosaic PNG per detected split, for example <stem>_train.png and <stem>_test.png.",
     )
     return parser.parse_args()
 
@@ -62,8 +62,8 @@ def main() -> None:
     )
     print()
     print(format_info(f"Wrote dataset_stats.json: {output_json}"), flush=True)
-    print(format_info(f"Wrote dataset_stats_train.png: {output_pngs['train']}"), flush=True)
-    print(format_info(f"Wrote dataset_stats_val.png: {output_pngs['val']}"), flush=True)
+    for split in stats["splits"]:
+        print(format_info(f"Wrote dataset_stats_{split}.png: {output_pngs[split]}"), flush=True)
 
 
 if __name__ == "__main__":

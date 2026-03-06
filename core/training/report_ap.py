@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.common import PipelineError, ProgressCallback
+from core.common import PipelineError, ProgressCallback, ensure_local_mplconfigdir
 
 def _to_float(value: Any) -> float:
     try:
@@ -66,6 +66,7 @@ def export_per_class_ap(
             hint="Point --data to a YOLO dataset YAML produced by conversion or preparation.",
         )
 
+    ensure_local_mplconfigdir()
     from ultralytics import YOLO
 
     if progress_callback is not None:

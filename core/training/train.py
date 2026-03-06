@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Set
 
-from core.common import PipelineError
+from core.common import PipelineError, ensure_local_mplconfigdir
 
 
 DEFAULTS: Dict[str, Any] = {
@@ -247,6 +247,7 @@ def build_training_plan(cfg: Mapping[str, Any], overrides: Optional[Mapping[str,
 
 
 def run_training(model_path: str, train_kwargs: Mapping[str, Any]) -> Any:
+    ensure_local_mplconfigdir()
     from ultralytics import YOLO
 
     model = YOLO(str(model_path))

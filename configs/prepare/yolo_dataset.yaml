@@ -2,33 +2,58 @@
 # Apply it with:
 #   yolo-prepare-dataset --dataset-dir data/converted/my_dataset --recipe configs/prepare/yolo_dataset.yaml
 #
-# This example is intentionally safe by default: it performs no class changes.
-# Because this command is destructive, an entirely empty recipe is rejected.
-# Uncomment or edit the sections below after inspecting the dataset with:
+# This example is intentionally no-op by default and will be rejected until you
+# request a real change. Inspect the dataset first:
 #   yolo-print-stats --dataset-dir data/converted/my_dataset
 
 # Optional dataset name for the regenerated data.yaml file.
 # If omitted, the current dataset directory name is used.
 # dataset_name: my_dataset_prepared
 
-# Random seed used for split sampling.
-sample_seed: 42
-
 # Policy for images that become empty after class dropping/remapping:
 # - drop: remove empty image + label file
 # - keep: keep image and leave an empty label file
 empty_policy: drop
 
-sampling:
+split:
+  # Split modes:
+  # - keep_existing: keep current train/val/(test) boundaries as-is
+  # - sample_existing: downsample current splits independently
+  # - resplit_combined_random: merge current splits and resplit by image fractions
+  # - resplit_combined_by_instances: merge current splits and satisfy val/test
+  #   instance targets before filling nominal fractions
+  mode: keep_existing
+
+  # Random seed used by sample_existing and combined resplit modes.
+  seed: 42
+
+  # For sample_existing:
+  # - fractions are per-split keep rates
+  #
+  # For combined resplit modes:
+  # - fractions are target split sizes across the combined pool
+  # - train_fraction + val_fraction + test_fraction must sum to 1.0
   train_fraction: 1.0
   val_fraction: 1.0
+  test_fraction: 0.0
+
+  # Optional constraints for resplit_combined_by_instances.
+  # These request a minimum number of instances in val/test per class.
+  min_val_instances_per_class: 0
+  min_test_instances_per_class: 0
+
+  # Optional per-class overrides for resplit_combined_by_instances.
+  # Selector forms:
+  # - exact class names, for example: "shirt, blouse"
+  # - class ids, for example: "23"
+  # - id ranges, for example: "30-35"
+  # Compact YAML flow-style is supported and preferred in docs, for example:
+  # per_class_min_val_instances: {23: 80, "shirt, blouse": 60, "30-35": 10}
+  per_class_min_val_instances: {}
+  per_class_min_test_instances: {}
 
 classes:
   # Optional selectors to keep before remapping. If omitted, all classes are kept.
-  # Selector forms:
-  # - exact class names, for example: "shirt, blouse"
-  # - class ids, for example: 23
-  # - id ranges, for example: "30-35"
   keep: []
 
   # Optional selectors to remove before remapping.
@@ -49,7 +74,9 @@ classes:
   #     from: ["shirt, blouse", "top, t-shirt, sweatshirt", 2, 3, "30-35"]
 
 # To make this recipe do something, change at least one of:
-# - sampling.train_fraction / sampling.val_fraction
+# - split.mode
+# - split fractions
+# - split instance constraints
 # - classes.keep
 # - classes.drop
 # - classes.remap

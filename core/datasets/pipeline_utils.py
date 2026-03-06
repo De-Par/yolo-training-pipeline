@@ -17,6 +17,15 @@ def clamp_fraction(value: float, name: str) -> float:
     return value
 
 
+def clamp_fraction_allow_zero(value: float, name: str) -> float:
+    if not (0.0 <= value <= 1.0):
+        raise PipelineError(
+            f"{name} must be in [0, 1], got {value}",
+            hint="Use 0.0 to disable the split, 1.0 for the full split, or a fraction like 0.1 for a 10% split.",
+        )
+    return value
+
+
 def is_wsl() -> bool:
     try:
         return "WSL_DISTRO_NAME" in os.environ or "microsoft" in Path("/proc/version").read_text().lower()

@@ -1,5 +1,6 @@
 from core.common.cli import exit_with_pipeline_error, run_cli, run_cli_with_progress, stdout_logger
 from core.common.errors import PipelineError, format_pipeline_error
+from core.common.fs import ensure_local_mplconfigdir
 from core.common.logging import format_detail, format_error, format_hint, format_info, format_log, format_warning
 from core.common.progress import (
     NullProgressReporter,
@@ -13,6 +14,7 @@ from core.common.progress import (
 __all__ = [
     "PipelineError",
     "format_pipeline_error",
+    "ensure_local_mplconfigdir",
     "format_log",
     "format_info",
     "format_warning",

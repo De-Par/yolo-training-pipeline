@@ -3,12 +3,13 @@ from __future__ import annotations
 import shutil
 
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 import yaml
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
+DATASET_SPLIT_ORDER = ("train", "val", "test")
 
 
 def safe_dataset_key(name: str) -> str:
@@ -32,15 +33,22 @@ def write_classes_txt(output_dir: Path, class_names: List[str]) -> Path:
     return path
 
 
-def write_dataset_yaml(output_dir: Path, class_names: List[str], dataset_name: str) -> Path:
+def write_dataset_yaml(
+    output_dir: Path,
+    class_names: List[str],
+    dataset_name: str,
+    *,
+    split_names: Sequence[str] | None = None,
+) -> Path:
     yaml_path = output_dir / f"{dataset_name}.yaml"
+    active_splits = list(split_names or ("train", "val"))
     cfg = {
         "path": str(output_dir.resolve()),
-        "train": "images/train",
-        "val": "images/val",
         "names": {i: name for i, name in enumerate(class_names)},
         "nc": len(class_names),
     }
+    for split in active_splits:
+        cfg[split] = f"images/{split}"
     with yaml_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(cfg, handle, sort_keys=False, allow_unicode=True)
     return yaml_path
@@ -62,9 +70,8 @@ def clean_output_dir(output_dir: Path, dataset_key: str) -> None:
     remove_tree(output_dir / "images.cache")
     (output_dir / "classes.txt").unlink(missing_ok=True)
     (output_dir / "dataset_stats.json").unlink(missing_ok=True)
-    (output_dir / "dataset_stats.png").unlink(missing_ok=True)
-    (output_dir / "dataset_stats_train.png").unlink(missing_ok=True)
-    (output_dir / "dataset_stats_val.png").unlink(missing_ok=True)
+    for path in output_dir.glob("dataset_stats*.png"):
+        path.unlink(missing_ok=True)
     (output_dir / "prepare_report.json").unlink(missing_ok=True)
     (output_dir / f"{dataset_key}.yaml").unlink(missing_ok=True)
     for path in output_dir.glob("**/*.cache"):
@@ -89,3 +96,13 @@ def build_image_stem_map(images_dir: Path) -> Dict[str, List[Path]]:
     for path in iter_image_files(images_dir):
         stems.setdefault(path.stem, []).append(path)
     return stems
+
+
+def detect_dataset_splits(dataset_dir: Path) -> List[str]:
+    splits: List[str] = []
+    for split in DATASET_SPLIT_ORDER:
+        images_dir = dataset_dir / "images" / split
+        labels_dir = dataset_dir / "labels" / split
+        if images_dir.exists() or labels_dir.exists():
+            splits.append(split)
+    return splits

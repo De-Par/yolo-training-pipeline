@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Set
 
 import numpy as np
 
-from core.common import PipelineError, ProgressCallback, format_info
-from core.datasets.common import count_images, iter_image_files, load_class_names
+from core.common import PipelineError, ProgressCallback, ensure_local_mplconfigdir, format_info
+from core.datasets.common import count_images, detect_dataset_splits, iter_image_files, load_class_names
 
 
 def _parse_label_line(line: str) -> tuple[int, float, float, float, float] | None:
@@ -126,64 +126,52 @@ def compute_label_stats(
     }
 
 
-def build_class_stats_rows(class_names: List[str], train_stats: Dict[str, Any], val_stats: Dict[str, Any]) -> List[Dict[str, Any]]:
+def build_class_stats_rows(class_names: List[str], split_stats: Dict[str, Dict[str, Any]], splits: List[str]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for index, name in enumerate(class_names):
-        train_inst = train_stats["instances"][index]
-        val_inst = val_stats["instances"][index]
-        train_imgs = train_stats["images_with_class"][index]
-        val_imgs = val_stats["images_with_class"][index]
-        total_inst = train_inst + val_inst
-        total_imgs = train_imgs + val_imgs
+        row: Dict[str, Any] = {"id": index, "name": name, "total_inst": 0, "total_imgs": 0}
+        for split in splits:
+            label_stats = split_stats[split]["label_stats"]
+            split_inst = label_stats["instances"][index]
+            split_imgs = label_stats["images_with_class"][index]
+            row[f"{split}_inst"] = split_inst
+            row[f"{split}_imgs"] = split_imgs
+            row["total_inst"] += split_inst
+            row["total_imgs"] += split_imgs
+        total_inst = row["total_inst"]
+        total_imgs = row["total_imgs"]
         if total_inst == 0 and total_imgs == 0:
             continue
-        rows.append(
-            {
-                "id": index,
-                "train_inst": train_inst,
-                "val_inst": val_inst,
-                "total_inst": total_inst,
-                "train_imgs": train_imgs,
-                "val_imgs": val_imgs,
-                "total_imgs": total_imgs,
-                "name": name,
-            }
-        )
+        rows.append(row)
     return rows
 
 
-def format_class_stats_table(title: str, rows: List[Dict[str, Any]]) -> str:
+def format_class_stats_table(title: str, rows: List[Dict[str, Any]], splits: List[str]) -> str:
     if not rows:
         return f"{title}\nNo non-empty classes"
 
-    headers = ["id", "train_inst", "val_inst", "total_inst", "train_imgs", "val_imgs", "total_imgs", "name"]
-    widths = {
-        "id": max(len(headers[0]), max(len(str(row["id"])) for row in rows)),
-        "train_inst": max(len(headers[1]), max(len(str(row["train_inst"])) for row in rows)),
-        "val_inst": max(len(headers[2]), max(len(str(row["val_inst"])) for row in rows)),
-        "total_inst": max(len(headers[3]), max(len(str(row["total_inst"])) for row in rows)),
-        "train_imgs": max(len(headers[4]), max(len(str(row["train_imgs"])) for row in rows)),
-        "val_imgs": max(len(headers[5]), max(len(str(row["val_imgs"])) for row in rows)),
-        "total_imgs": max(len(headers[6]), max(len(str(row["total_imgs"])) for row in rows)),
-        "name": max(len(headers[7]), max(len(row["name"]) for row in rows)),
-    }
+    columns = ["id"] + [f"{split}_inst" for split in splits] + ["total_inst"] + [f"{split}_imgs" for split in splits] + ["total_imgs", "name"]
+    widths = {"id": max(len("id"), max(len(str(row["id"])) for row in rows)), "name": max(len("name"), max(len(row["name"]) for row in rows))}
+    for split in splits:
+        inst_key = f"{split}_inst"
+        imgs_key = f"{split}_imgs"
+        widths[inst_key] = max(len(inst_key), max(len(str(row[inst_key])) for row in rows))
+        widths[imgs_key] = max(len(imgs_key), max(len(str(row[imgs_key])) for row in rows))
+    widths["total_inst"] = max(len("total_inst"), max(len(str(row["total_inst"])) for row in rows))
+    widths["total_imgs"] = max(len("total_imgs"), max(len(str(row["total_imgs"])) for row in rows))
 
-    header_line = (
-        f"{headers[0]:>{widths['id']}}  {headers[1]:>{widths['train_inst']}}  {headers[2]:>{widths['val_inst']}}  "
-        f"{headers[3]:>{widths['total_inst']}}  {headers[4]:>{widths['train_imgs']}}  {headers[5]:>{widths['val_imgs']}}  "
-        f"{headers[6]:>{widths['total_imgs']}}  {headers[7]:<{widths['name']}}"
+    header_line = "  ".join(
+        f"{column:>{widths[column]}}" if column != "name" else f"{column:<{widths[column]}}"
+        for column in columns
     )
-    separator = (
-        f"{'-' * widths['id']}  {'-' * widths['train_inst']}  {'-' * widths['val_inst']}  "
-        f"{'-' * widths['total_inst']}  {'-' * widths['train_imgs']}  {'-' * widths['val_imgs']}  "
-        f"{'-' * widths['total_imgs']}  {'-' * widths['name']}"
-    )
+    separator = "  ".join("-" * widths[column] for column in columns)
     lines = [title, header_line, separator]
     for row in rows:
         lines.append(
-            f"{row['id']:>{widths['id']}}  {row['train_inst']:>{widths['train_inst']}}  {row['val_inst']:>{widths['val_inst']}}  "
-            f"{row['total_inst']:>{widths['total_inst']}}  {row['train_imgs']:>{widths['train_imgs']}}  {row['val_imgs']:>{widths['val_imgs']}}  "
-            f"{row['total_imgs']:>{widths['total_imgs']}}  {row['name']:<{widths['name']}}"
+            "  ".join(
+                f"{row[column]:>{widths[column]}}" if column != "name" else f"{row[column]:<{widths[column]}}"
+                for column in columns
+            )
         )
     return "\n".join(lines)
 
@@ -287,91 +275,83 @@ def collect_yolo_dataset_stats(dataset_dir: Path, progress_callback: ProgressCal
             hint="Regenerate the dataset with yolo-convert-dataset or inspect classes.txt for empty/invalid content.",
         )
 
-    train_label_files = _list_label_files(dataset_dir / "labels" / "train")
-    val_label_files = _list_label_files(dataset_dir / "labels" / "val")
+    splits = detect_dataset_splits(dataset_dir)
+    if not splits:
+        raise PipelineError(
+            f"No dataset splits found in {dataset_dir}",
+            hint="Expected images/<split> and labels/<split> directories, for example train and val.",
+        )
+    label_files_by_split = {split: _list_label_files(dataset_dir / "labels" / split) for split in splits}
     if progress_callback is not None:
-        total_steps = (len(train_label_files) + len(val_label_files)) * 2
+        total_steps = sum(len(label_files_by_split[split]) for split in splits) * 2
         progress_callback("stats:collect:init", 0, total_steps, "stats:collect")
-    train = _summarize_split(
-        dataset_dir,
-        "train",
-        len(class_names),
-        label_files=train_label_files,
-        progress_callback=progress_callback,
-    )
-    val = _summarize_split(
-        dataset_dir,
-        "val",
-        len(class_names),
-        label_files=val_label_files,
-        progress_callback=progress_callback,
-    )
-    train_plot = _collect_plot_points(
-        dataset_dir,
-        "train",
-        len(class_names),
-        label_files=train_label_files,
-        progress_callback=progress_callback,
-    )
-    val_plot = _collect_plot_points(
-        dataset_dir,
-        "val",
-        len(class_names),
-        label_files=val_label_files,
-        progress_callback=progress_callback,
-    )
-    class_rows = build_class_stats_rows(class_names, train["label_stats"], val["label_stats"])
+    split_summaries = {
+        split: _summarize_split(
+            dataset_dir,
+            split,
+            len(class_names),
+            label_files=label_files_by_split[split],
+            progress_callback=progress_callback,
+        )
+        for split in splits
+    }
+    split_plot_data = {
+        split: _collect_plot_points(
+            dataset_dir,
+            split,
+            len(class_names),
+            label_files=label_files_by_split[split],
+            progress_callback=progress_callback,
+        )
+        for split in splits
+    }
+    class_rows = build_class_stats_rows(class_names, split_summaries, splits)
     class_rows_sorted = sorted(class_rows, key=lambda row: (-row["total_inst"], row["id"]))
     payload = {
         "dataset_dir": str(dataset_dir),
         "num_classes": len(class_names),
         "classes": [{"id": index, "name": name} for index, name in enumerate(class_names)],
-        "train": train,
-        "val": val,
+        "splits": splits,
         "class_rows": class_rows_sorted,
         "totals": {
-            "images": train["image_count"] + val["image_count"],
-            "label_files": train["label_file_count"] + val["label_file_count"],
-            "empty_label_files": train["empty_label_files"] + val["empty_label_files"],
-            "instances": train["label_stats"]["total_boxes"] + val["label_stats"]["total_boxes"],
+            "images": sum(split_summaries[split]["image_count"] for split in splits),
+            "label_files": sum(split_summaries[split]["label_file_count"] for split in splits),
+            "empty_label_files": sum(split_summaries[split]["empty_label_files"] for split in splits),
+            "instances": sum(split_summaries[split]["label_stats"]["total_boxes"] for split in splits),
         },
-        "plot_data": {
-            "train": train_plot,
-            "val": val_plot,
-        },
+        "plot_data": split_plot_data,
     }
+    for split in splits:
+        payload[split] = split_summaries[split]
     return payload
 
 
 def render_dataset_summary(stats: Dict[str, Any]) -> str:
-    train = stats["train"]
-    val = stats["val"]
     lines = [
         format_info("Dataset summary"),
         f"dataset_dir:       {stats['dataset_dir']}",
         f"num_classes:       {stats['num_classes']}",
-        f"train_images:      {train['image_count']}",
-        f"val_images:        {val['image_count']}",
-        f"train_label_files: {train['label_file_count']}",
-        f"val_label_files:   {val['label_file_count']}",
-        f"train_missing_labels: {train['missing_label_files']}",
-        f"val_missing_labels:   {val['missing_label_files']}",
-        f"train_orphan_labels:  {train['orphan_label_files']}",
-        f"val_orphan_labels:    {val['orphan_label_files']}",
         f"empty_labels:      {stats['totals']['empty_label_files']}",
         f"instances_total:   {stats['totals']['instances']}",
-        f"train_mean_area:   {train['label_stats']['mean_area']}",
-        f"val_mean_area:     {val['label_stats']['mean_area']}",
-        f"train_mean_xy:     ({train['label_stats']['mean_x']}, {train['label_stats']['mean_y']})",
-        f"val_mean_xy:       ({val['label_stats']['mean_x']}, {val['label_stats']['mean_y']})",
-        f"train_area_bins:   {train['label_stats']['area_bins']}",
-        f"val_area_bins:     {val['label_stats']['area_bins']}",
     ]
+    for split in stats["splits"]:
+        split_stats = stats[split]
+        lines.extend(
+            [
+                f"{split}_images:      {split_stats['image_count']}",
+                f"{split}_label_files: {split_stats['label_file_count']}",
+                f"{split}_missing_labels: {split_stats['missing_label_files']}",
+                f"{split}_orphan_labels:  {split_stats['orphan_label_files']}",
+                f"{split}_mean_area:   {split_stats['label_stats']['mean_area']}",
+                f"{split}_mean_xy:     ({split_stats['label_stats']['mean_x']}, {split_stats['label_stats']['mean_y']})",
+                f"{split}_area_bins:   {split_stats['label_stats']['area_bins']}",
+            ]
+        )
     return "\n".join(lines)
 
 
 def render_class_table(stats: Dict[str, Any]) -> str:
-    return format_class_stats_table(format_info("Per-class instance table"), stats["class_rows"])
+    return format_class_stats_table(format_info("Per-class instance table"), stats["class_rows"], stats["splits"])
 
 
 def write_dataset_stats_json(output_path: Path, stats: Dict[str, Any]) -> Path:
@@ -381,14 +361,11 @@ def write_dataset_stats_json(output_path: Path, stats: Dict[str, Any]) -> Path:
     return output_path
 
 
-def _resolve_plot_output_paths(output_path: Path) -> Dict[str, Path]:
+def _resolve_plot_output_paths(output_path: Path, splits: List[str]) -> Dict[str, Path]:
     suffix = output_path.suffix or ".png"
     stem = output_path.stem if output_path.suffix else output_path.name
     directory = output_path.parent
-    return {
-        "train": directory / f"{stem}_train{suffix}",
-        "val": directory / f"{stem}_val{suffix}",
-    }
+    return {split: directory / f"{stem}_{split}{suffix}" for split in splits}
 
 
 def _write_split_dataset_plot(
@@ -397,11 +374,7 @@ def _write_split_dataset_plot(
     split: str,
     progress_callback: ProgressCallback | None = None,
 ) -> Path:
-    import os
-
-    mpl_cache_dir = (Path(".cache") / "matplotlib").resolve()
-    mpl_cache_dir.mkdir(parents=True, exist_ok=True)
-    os.environ.setdefault("MPLCONFIGDIR", str(mpl_cache_dir))
+    ensure_local_mplconfigdir()
 
     import matplotlib
     matplotlib.use("Agg")
@@ -517,7 +490,7 @@ def write_dataset_stats_plot(
     stats: Dict[str, Any],
     progress_callback: ProgressCallback | None = None,
 ) -> Dict[str, Path]:
-    output_paths = _resolve_plot_output_paths(output_path)
+    output_paths = _resolve_plot_output_paths(output_path, stats["splits"])
     if progress_callback is not None:
         progress_callback("stats:render:init", 0, len(output_paths), "stats:render")
     for split, split_output_path in output_paths.items():
