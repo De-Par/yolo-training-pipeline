@@ -1,14 +1,16 @@
 # Optional in-place preparation recipe for a YOLO-styled dataset.
-# Apply it with:
-#   yolo-prepare-dataset --dataset-dir data/converted/my_dataset --recipe configs/prepare/yolo_dataset.yaml
+# Treat this file as a starting point. Copy it to a local recipe and override
+# split rules, class surgery, and output naming for your own dataset.
+# Usage:
+#   yolo-prepare-dataset --dataset-dir path/to/dataset_dir --recipe configs/prepare/prepare.example.yaml
 #
 # This example is intentionally no-op by default and will be rejected until you
 # request a real change. Inspect the dataset first:
-#   yolo-print-stats --dataset-dir data/converted/my_dataset
+#   yolo-print-stats --dataset-dir path/to/dataset_dir
 
-# Optional dataset name for the regenerated data.yaml file.
-# If omitted, the current dataset directory name is used.
-# dataset_name: my_dataset_prepared
+# Optional dataset name written into the regenerated data.yaml file.
+# If omitted, the current dataset directory name is reused.
+# dataset_name: prepared_dataset_name
 
 # Policy for images that become empty after class dropping/remapping:
 # - drop: remove empty image + label file
@@ -44,11 +46,11 @@ split:
 
   # Optional per-class overrides for resplit_combined_by_instances.
   # Selector forms:
-  # - exact class names, for example: "shirt, blouse"
-  # - class ids, for example: "23"
+  # - exact class names, for example: "class name"
+  # - class ids, for example: 23
   # - id ranges, for example: "30-35"
-  # Compact YAML flow-style is supported and preferred in docs, for example:
-  # per_class_min_val_instances: {23: 80, "shirt, blouse": 60, "30-35": 10}
+  # Compact YAML flow-style is supported, for example:
+  # per_class_min_val_instances: {23: 80, "class name": 60, "30-35": 10}
   per_class_min_val_instances: {}
   per_class_min_test_instances: {}
 
@@ -66,12 +68,12 @@ classes:
 
   # Example:
   # remap:
-  #   - name: footwear
-  #     from: [23]
-  #   - name: outerwear
-  #     from: ["coat", "jacket"]
-  #   - name: tops
-  #     from: ["shirt, blouse", "top, t-shirt, sweatshirt", 2, 3, "30-35"]
+  #   - name: merged_class_a
+  #     from: [0]
+  #   - name: merged_class_b
+  #     from: ["class one", "class two"]
+  #   - name: merged_class_c
+  #     from: ["class name", 2, 3, "30-35"]
 
 # To make this recipe do something, change at least one of:
 # - split.mode

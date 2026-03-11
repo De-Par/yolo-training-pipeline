@@ -1,0 +1,190 @@
+# Example training preset for an NVIDIA GPU setup.
+# Treat this file as a starting point. Copy it to a local config and override
+# paths, run naming, schedule, and augmentation for your own dataset and hardware.
+# Usage:
+#   yolo-train --cfg configs/train/nvidia.example.yaml
+
+# ==============================================================================
+# REQUIRED INPUTS
+# ==============================================================================
+
+# Model checkpoint or model definition used for training.
+# Replace this with the checkpoint or architecture you want to train.
+# Typical choices are:
+# - a pretrained detector checkpoint
+# - a model architecture YAML
+# Larger models usually improve accuracy at the cost of speed and VRAM.
+model: path/to/model.pt
+
+# Dataset YAML produced by the convert step or by the optional prepare step.
+# Replace this with the dataset YAML for your current experiment.
+# The dataset YAML is expected to define:
+# - path
+# - train / val
+# - names
+# - nc
+data: path/to/dataset.yaml
+
+
+# ==============================================================================
+# RUN MANAGEMENT
+# ==============================================================================
+
+# Base directory for run artifacts.
+# Ultralytics writes run folders like:
+#   <project>/<name>/
+project: runs
+
+# Run name inside project.
+# Override this per experiment to keep runs distinct and reproducible.
+name: yolo-run-cuda
+
+# Behavior when the target run directory already exists.
+# - false: create a new incremented directory
+# - true: reuse the same directory name
+exist_ok: false
+
+# Save checkpoints during training.
+save: true
+
+# Save a checkpoint every N epochs.
+# - positive integer: periodic checkpoints
+# - -1: only keep best and last
+save_period: 10
+
+# Save training plots such as loss and metric curves.
+plots: true
+
+# Extra trainer logging.
+verbose: true
+
+
+# ==============================================================================
+# CORE SCHEDULE
+# ==============================================================================
+
+# Total number of training epochs.
+epochs: 300
+
+# Early stopping patience in epochs.
+patience: 10
+
+# Training image size in pixels.
+# Ultralytics train/val expects a single integer here, not [H, W].
+# Internally images are resized with aspect-ratio preservation and padded to
+# imgsz x imgsz.
+imgsz: 1024
+
+# Batch size per optimizer step.
+# If you hit CUDA OOM, reduce this first.
+batch: 32
+
+
+# ==============================================================================
+# DEVICE / SPEED
+# ==============================================================================
+
+# Training device.
+# Examples:
+# - 0       -> first CUDA GPU
+# - 1       -> second CUDA GPU
+# - cpu     -> CPU fallback
+# Replace this with the GPU index that matches your machine.
+device: 0
+
+# Number of DataLoader worker processes.
+workers: 16
+
+# Image caching mode.
+# Options:
+# - false / null: no cache
+# - disk: cache on disk
+# - ram: cache in RAM
+cache: disk
+
+# Automatic Mixed Precision.
+amp: true
+
+# torch.compile support.
+# Keep false unless you have measured a real benefit on your stack.
+compile: false
+
+
+# ==============================================================================
+# REPRODUCIBILITY
+# ==============================================================================
+
+# Global random seed.
+seed: 42
+
+# Deterministic training mode.
+# - true: more reproducible, often slower
+# - false: faster, less bit-for-bit repeatable
+deterministic: false
+
+# Whether to initialize from pretrained weights when supported.
+pretrained: true
+
+# Run validation during training.
+val: true
+
+# Fraction of the training set to use.
+# Useful for smoke tests and quick experiments.
+fraction: 1.0
+
+
+# ==============================================================================
+# OPTIMIZER / LR
+# ==============================================================================
+
+# Optimizer choice.
+optimizer: AdamW
+
+# Initial learning rate.
+lr0: 0.002
+
+# Final LR fraction for the schedule.
+lrf: 0.02
+
+# Momentum term.
+momentum: 0.9
+
+# Weight decay regularization.
+weight_decay: 0.0005
+
+# Use cosine LR decay instead of the default linear-style decay.
+cos_lr: true
+
+# Number of warmup epochs.
+warmup_epochs: 5.0
+
+# Starting momentum during warmup.
+warmup_momentum: 0.8
+
+# Separate warmup LR for bias parameters.
+warmup_bias_lr: 0.05
+
+# Nominal batch size used for internal LR scaling.
+nbs: 64
+
+
+# ==============================================================================
+# LOSS BALANCE
+# ==============================================================================
+
+# Box regression loss gain.
+box: 8.0
+
+# Classification loss gain.
+cls: 0.8
+
+# Distribution Focal Loss gain.
+dfl: 1.8
+
+
+# ==============================================================================
+# DATA FILTERS
+# ==============================================================================
+
+# Train as a single-class problem regardless of dataset class IDs.
+single_cls: false
