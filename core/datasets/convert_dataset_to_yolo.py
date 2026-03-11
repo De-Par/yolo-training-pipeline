@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from PIL import Image
+
 from core.common import PipelineError, ProgressCallback, format_info
 from core.common.fs import clean_split_dirs, safe_link_or_copy
 from core.datasets.common import clean_output_dir, safe_dataset_key, write_classes_txt, write_dataset_yaml
@@ -317,6 +319,17 @@ def _convert_coco_detection_split(
     }
 
 
+def _read_image_size(image_path: Path) -> tuple[int, int] | None:
+    try:
+        with Image.open(image_path) as image:
+            width, height = image.size
+    except Exception:
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return int(width), int(height)
+
+
 def _find_image_for_stem(images_dir: Path, stem: str) -> Optional[Path]:
     for ext in (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG", ".webp", ".bmp"):
         candidate = images_dir / f"{stem}{ext}"
@@ -371,13 +384,16 @@ def _convert_per_image_json_split(
             continue
 
         annotation = json.loads(annotation_path.read_text(encoding="utf-8"))
-        img_w = int(annotation.get(image_width_key, 0))
-        img_h = int(annotation.get(image_height_key, 0))
+        img_w = int(annotation.get(image_width_key, 0) or 0)
+        img_h = int(annotation.get(image_height_key, 0) or 0)
         if img_w <= 0 or img_h <= 0:
-            invalid_annotations += 1
-            if progress_callback is not None:
-                progress_callback(f"convert:items:{split}", index, total_annotations, f"convert:items:{split}: {stem}")
-            continue
+            image_size = _read_image_size(image_path)
+            if image_size is None:
+                invalid_annotations += 1
+                if progress_callback is not None:
+                    progress_callback(f"convert:items:{split}", index, total_annotations, f"convert:items:{split}: {stem}")
+                continue
+            img_w, img_h = image_size
 
         lines: List[str] = []
         for key, item in annotation.items():
