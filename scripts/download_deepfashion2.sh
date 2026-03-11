@@ -6,34 +6,40 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 cd "${PROJECT_ROOT}"
 
-SOURCE="kaggle"
+SOURCE="official"
 OUT_DIR="data/raw"
-DATASET_SLUG="${DEEPFASHION2_KAGGLE_DATASET:-rishi1903/deepfashion-2}"
 ARCHIVE_PASSWORD="${DEEPFASHION2_ARCHIVE_PASSWORD:-}"
+OFFICIAL_FOLDER_URL="https://drive.google.com/drive/folders/125F48fsMBz2EF0Cpqk6aaHet5VH399Ok?usp=sharing"
+DOWNLOAD_ONLY=0
 
 usage() {
     cat <<USAGE
-Download or organize the DeepFashion2 demo dataset
+Download or organize the official DeepFashion2 dataset.
 
 Usage:
-  scripts/download_deepfashion2.sh [--source kaggle|local] [--out-dir data/raw] [--dataset-slug <owner/dataset>] [--archive-password <password>]
+  scripts/download_deepfashion2.sh [--source official|local] [--out-dir data/raw] [--archive-password <password>] [--download-only]
 
 Options:
-  --source kaggle|local       kaggle downloads an unofficial Kaggle mirror via kaggle CLI
-                              local only unpacks archives already placed in <out-dir>/deepfashion2/downloads/
-  --out-dir PATH              Base raw-data directory. Default: data/raw
-  --dataset-slug SLUG         Kaggle dataset slug. Default: ${DATASET_SLUG}
-  --archive-password PASS     Password for encrypted nested zip archives
-                              Prefer DEEPFASHION2_ARCHIVE_PASSWORD env var to avoid leaking the password into shell history
+  --source official|local    official downloads the official Google Drive folder via gdown
+                            local only unpacks archives already placed in <out-dir>/deepfashion2/downloads/
+  --out-dir PATH            Base raw-data directory. Default: data/raw
+  --archive-password PASS   Password for encrypted nested zip archives
+                            Prefer DEEPFASHION2_ARCHIVE_PASSWORD env var to avoid leaking the password into shell history
+  --download-only           Download official archives into <out-dir>/deepfashion2/downloads/ and stop
+  -h, --help                Show this help message
 
-Requirements for --source kaggle:
-  - kaggle CLI installed and authenticated
-  - a reachable dataset slug
+Requirements for --source official:
+  - gdown installed in the current environment
+  - access to the official DeepFashion2 Google Drive folder
+  - the archive password for protected nested zip files
+
+Official source:
+  - GitHub: https://github.com/switchablenorms/DeepFashion2
+  - Google Drive folder: ${OFFICIAL_FOLDER_URL}
 
 Notes:
-  - This script intentionally avoids the official password-protected archive flow unless you explicitly provide the password
-  - The default Kaggle source is a mirror, not the official distribution
-  - Verify provenance, contents, and licensing before production use
+  - Obtain the password by filling the official request form linked from the DeepFashion2 project page
+  - The script writes data/raw/deepfashion2/classes.txt in the official 13-class order
 USAGE
 }
 
@@ -47,13 +53,13 @@ while [[ $# -gt 0 ]]; do
             OUT_DIR="$2"
             shift 2
             ;;
-        --dataset-slug)
-            DATASET_SLUG="$2"
-            shift 2
-            ;;
         --archive-password)
             ARCHIVE_PASSWORD="$2"
             shift 2
+            ;;
+        --download-only)
+            DOWNLOAD_ONLY=1
+            shift
             ;;
         -h|--help)
             usage
@@ -68,7 +74,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$SOURCE" in
-    kaggle|local) ;;
+    official|local) ;;
     *)
         echo "Invalid --source: $SOURCE" >&2
         exit 1
@@ -79,21 +85,27 @@ need_cmd() {
     local cmd="$1"
     command -v "$cmd" >/dev/null 2>&1 || {
         echo "Missing required command: $cmd" >&2
-        if [[ "$cmd" == "kaggle" ]]; then
+        if [[ "$cmd" == "gdown" ]]; then
             echo "[DeepFashion2] Install project dependencies again with: source scripts/setup_env.sh base" >&2
-            echo "[DeepFashion2] Then configure Kaggle API access, for example via ~/.kaggle/kaggle.json" >&2
         fi
         exit 1
     }
 }
 
-need_cmd python3
+need_cmd unzip
+need_cmd zipinfo
 need_cmd tar
 need_cmd mktemp
+need_cmd find
+
+if [[ "$SOURCE" == "official" ]]; then
+    need_cmd gdown
+fi
 
 root="$OUT_DIR/deepfashion2"
 dl="$root/downloads"
 unpack="$root/unpacked"
+classes_file="$root/classes.txt"
 mkdir -p "$dl" "$unpack"
 
 print_extract_progress() {
@@ -105,61 +117,52 @@ print_extract_progress() {
 }
 
 reset_unpack_dir() {
-    EXTRACT_DIR="$unpack" python3 - <<'PY'
-import os
-import shutil
-from pathlib import Path
+    rm -rf "$unpack"
+    mkdir -p "$unpack"
+}
 
-root = Path(os.environ["EXTRACT_DIR"])
-root.mkdir(parents=True, exist_ok=True)
-for child in root.iterdir():
-    if child.is_dir():
-        shutil.rmtree(child)
-    else:
-        child.unlink()
-PY
+zip_is_encrypted() {
+    local archive="$1"
+    if zipinfo -v "$archive" 2>/dev/null | grep -q "file security status:                           encrypted"; then
+        return 0
+    fi
+    return 1
 }
 
 extract_zip_archive() {
     local file="$1"
     local out="$2"
+    local log_file
 
-    ZIP_FILE="$file" ZIP_OUT="$out" ZIP_PASSWORD="$ARCHIVE_PASSWORD" python3 - <<'PY'
-import os
-import sys
-import zipfile
-from pathlib import Path
+    log_file="$(mktemp)"
 
-archive = Path(os.environ["ZIP_FILE"])
-out_dir = Path(os.environ["ZIP_OUT"])
-password = os.environ.get("ZIP_PASSWORD", "")
-pwd = password.encode("utf-8") if password else None
+    if [[ -n "$ARCHIVE_PASSWORD" ]]; then
+        if ! unzip -P "$ARCHIVE_PASSWORD" -q -o "$file" -d "$out" >"$log_file" 2>&1; then
+            cat "$log_file" >&2
+            rm -f "$log_file"
+            echo "[DeepFashion2] Error: failed to extract password-protected archive: $file" >&2
+            echo "[DeepFashion2] Verify --archive-password or DEEPFASHION2_ARCHIVE_PASSWORD." >&2
+            exit 1
+        fi
+        rm -f "$log_file"
+        return
+    fi
 
-try:
-    with zipfile.ZipFile(archive) as zf:
-        encrypted = any(info.flag_bits & 0x1 for info in zf.infolist())
-        if encrypted and not pwd:
-            print(f"[DeepFashion2] Error: archive requires a password: {archive}", file=sys.stderr)
-            print("[DeepFashion2] Provide --archive-password or set DEEPFASHION2_ARCHIVE_PASSWORD.", file=sys.stderr)
-            raise SystemExit(1)
-        try:
-            zf.extractall(out_dir, pwd=pwd)
-        except RuntimeError as exc:
-            message = str(exc).lower()
-            if "password required" in message or "encrypted" in message:
-                print(f"[DeepFashion2] Error: archive requires a password: {archive}", file=sys.stderr)
-                print("[DeepFashion2] Provide --archive-password or set DEEPFASHION2_ARCHIVE_PASSWORD.", file=sys.stderr)
-                raise SystemExit(1) from exc
-            if "bad password" in message or "password" in message:
-                print(f"[DeepFashion2] Error: invalid archive password: {archive}", file=sys.stderr)
-                print("[DeepFashion2] Verify --archive-password or DEEPFASHION2_ARCHIVE_PASSWORD.", file=sys.stderr)
-                raise SystemExit(1) from exc
-            raise
-except NotImplementedError as exc:
-    print(f"[DeepFashion2] Error: unsupported zip encryption for archive: {archive}", file=sys.stderr)
-    print("[DeepFashion2] Use a mirror with already unpacked train/validation content or provide a compatible decrypted archive.", file=sys.stderr)
-    raise SystemExit(1) from exc
-PY
+    if zip_is_encrypted "$file"; then
+        rm -f "$log_file"
+        echo "[DeepFashion2] Error: archive requires a password: $file" >&2
+        echo "[DeepFashion2] Provide --archive-password or set DEEPFASHION2_ARCHIVE_PASSWORD." >&2
+        exit 1
+    fi
+
+    if ! unzip -q -o "$file" -d "$out" >"$log_file" 2>&1; then
+        cat "$log_file" >&2
+        rm -f "$log_file"
+        echo "[DeepFashion2] Error: failed to extract archive: $file" >&2
+        exit 1
+    fi
+
+    rm -f "$log_file"
 }
 
 extract_archive() {
@@ -231,134 +234,113 @@ extract_nested_archives() {
     return 0
 }
 
-if [[ "$SOURCE" == "kaggle" ]]; then
-    need_cmd kaggle
-    echo "[DeepFashion2] Downloading Kaggle mirror: $DATASET_SLUG"
-    kaggle datasets download -d "$DATASET_SLUG" -p "$dl" --force
+write_classes_file() {
+    cat > "$classes_file" <<'EOF_CLASSES'
+short sleeve top
+long sleeve top
+short sleeve outwear
+long sleeve outwear
+vest
+sling
+shorts
+trousers
+skirt
+short sleeve dress
+long sleeve dress
+vest dress
+sling dress
+EOF_CLASSES
+}
+
+download_official_archives() {
+    echo "[DeepFashion2] Downloading official archive folder..."
+    gdown --folder "$OFFICIAL_FOLDER_URL" -O "$dl"
+}
+
+if [[ "$SOURCE" == "official" ]]; then
+    download_official_archives
 fi
 
 if ! find "$dl" -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' \) | grep -q .; then
     cat <<USAGE
 [DeepFashion2] No archives found in $dl
 Provide archives manually or rerun with:
-  scripts/download_deepfashion2.sh --source kaggle --dataset-slug <owner/dataset>
+  scripts/download_deepfashion2.sh --source official
 USAGE
     exit 1
 fi
 
-reset_unpack_dir
-
-list_file="$(mktemp)"
-processed_file="$(mktemp)"
-find "$dl" -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' \) | sort > "$list_file"
-
-if [[ ! -s "$list_file" ]]; then
-    rm -f "$list_file" "$processed_file"
-    echo "[DeepFashion2] No supported archives found in $dl" >&2
-    exit 1
+if [[ "$DOWNLOAD_ONLY" -eq 1 ]]; then
+    echo "[DeepFashion2] Downloaded official archives to: $dl"
+    exit 0
 fi
 
-echo "[DeepFashion2] Extracting archives..."
-extract_archives_from_list "Extracting archive" "$list_file" "$unpack"
-cat "$list_file" >> "$processed_file"
-rm -f "$list_file"
+reset_unpack_dir
 
-nested_pass=1
-while extract_nested_archives "$nested_pass" "$processed_file"; do
-    nested_pass=$((nested_pass + 1))
+top_level_list="$(mktemp)"
+processed_nested="$(mktemp)"
+trap 'rm -f "$top_level_list" "$processed_nested"' EXIT
+find "$dl" -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' \) | sort > "$top_level_list"
+
+extract_archives_from_list "Extracting archive" "$top_level_list" "$unpack"
+
+pass=1
+while extract_nested_archives "$pass" "$processed_nested"; do
+    pass=$((pass + 1))
 done
-rm -f "$processed_file"
 
-mkdir -p "$root/train/image" "$root/train/annos" "$root/validation/image" "$root/validation/annos"
-find "$root/train/image" -mindepth 1 -delete
-find "$root/train/annos" -mindepth 1 -delete
-find "$root/validation/image" -mindepth 1 -delete
-find "$root/validation/annos" -mindepth 1 -delete
+find_first_dir() {
+    local dir_name="$1"
+    find "$unpack" -type d -name "$dir_name" | sort | head -n 1
+}
 
-img_copied=0
-img_collision=0
-img_identical=0
-ann_copied=0
-ann_collision=0
-ann_identical=0
+train_src="$(find_first_dir train)"
+val_src="$(find_first_dir validation)"
+test_src="$(find_first_dir test)"
+json_val_src="$(find_first_dir json_for_validation)"
+json_test_src="$(find_first_dir json_for_test)"
+
+[[ -n "$train_src" ]] || { echo "[DeepFashion2] Error: train directory not found after extraction." >&2; exit 1; }
+[[ -n "$val_src" ]] || { echo "[DeepFashion2] Error: validation directory not found after extraction." >&2; exit 1; }
 
 echo "[DeepFashion2] Organizing files..."
-copy_file_safe() {
-    local src="$1"
-    local dst_dir="$2"
-    local kind="$3"
-    local dst="$dst_dir/$(basename "$src")"
+rm -rf "$root/train" "$root/validation" "$root/test" "$root/json_for_validation" "$root/json_for_test"
+mv "$train_src" "$root/train"
+mv "$val_src" "$root/validation"
+[[ -n "$test_src" ]] && mv "$test_src" "$root/test"
+[[ -n "$json_val_src" ]] && mv "$json_val_src" "$root/json_for_validation"
+[[ -n "$json_test_src" ]] && mv "$json_test_src" "$root/json_for_test"
+rm -rf "$unpack"
 
-    if [[ -e "$dst" ]]; then
-        if cmp -s "$src" "$dst"; then
-            if [[ "$kind" == "img" ]]; then
-                img_identical=$((img_identical + 1))
-            else
-                ann_identical=$((ann_identical + 1))
-            fi
-        else
-            if [[ "$kind" == "img" ]]; then
-                img_collision=$((img_collision + 1))
-            else
-                ann_collision=$((ann_collision + 1))
-            fi
-            echo "[DeepFashion2] Warning: collision for $(basename "$src"), skipping." >&2
-        fi
-        return
-    fi
+write_classes_file
 
-    cp -f "$src" "$dst"
-    if [[ "$kind" == "img" ]]; then
-        img_copied=$((img_copied + 1))
+count_files() {
+    local path="$1"
+    local pattern="$2"
+    if [[ -d "$path" ]]; then
+        find "$path" -type f -name "$pattern" | wc -l | tr -d ' '
     else
-        ann_copied=$((ann_copied + 1))
+        echo 0
     fi
 }
 
-while IFS= read -r f; do
-    case "$f" in
-        *train*/*image*|*train*/image/*)
-            copy_file_safe "$f" "$root/train/image" "img"
-            ;;
-        *validation*/*image*|*val*/*image*|*validation*/image/*)
-            copy_file_safe "$f" "$root/validation/image" "img"
-            ;;
-    esac
-done < <(find "$unpack" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \))
-
-while IFS= read -r f; do
-    case "$f" in
-        *train*/*anno*|*train*/annos/*)
-            copy_file_safe "$f" "$root/train/annos" "ann"
-            ;;
-        *validation*/*anno*|*val*/*anno*|*validation*/annos/*)
-            copy_file_safe "$f" "$root/validation/annos" "ann"
-            ;;
-    esac
-done < <(find "$unpack" -type f -name '*.json')
-
-train_img_count="$(find "$root/train/image" -type f | wc -l | tr -d ' ')"
-val_img_count="$(find "$root/validation/image" -type f | wc -l | tr -d ' ')"
-train_ann_count="$(find "$root/train/annos" -type f -name '*.json' | wc -l | tr -d ' ')"
-val_ann_count="$(find "$root/validation/annos" -type f -name '*.json' | wc -l | tr -d ' ')"
+train_images="$(count_files "$root/train/image" '*.jpg')"
+val_images="$(count_files "$root/validation/image" '*.jpg')"
+test_images="$(count_files "$root/test/image" '*.jpg')"
+train_annos="$(count_files "$root/train/annos" '*.json')"
+val_annos="$(count_files "$root/validation/annos" '*.json')"
 
 echo "[DeepFashion2] Ready at: $root"
 echo "[DeepFashion2] Source: $SOURCE"
-if [[ "$SOURCE" == "kaggle" ]]; then
-    echo "[DeepFashion2] Kaggle dataset: $DATASET_SLUG"
-fi
-echo "[DeepFashion2] Counts: train_images=$train_img_count val_images=$val_img_count train_annos=$train_ann_count val_annos=$val_ann_count"
-echo "[DeepFashion2] Copied: images=$img_copied annos=$ann_copied"
-if [[ "$img_collision" -gt 0 || "$ann_collision" -gt 0 ]]; then
-    echo "[DeepFashion2] Collisions skipped: images=$img_collision annos=$ann_collision" >&2
-fi
-if [[ "$img_identical" -gt 0 || "$ann_identical" -gt 0 ]]; then
-    echo "[DeepFashion2] Identical duplicates skipped: images=$img_identical annos=$ann_identical"
-fi
-if [[ "$train_img_count" -eq 0 || "$val_img_count" -eq 0 || "$train_ann_count" -eq 0 || "$val_ann_count" -eq 0 ]]; then
-    echo "[DeepFashion2] Error: one or more expected folders are empty after extraction and organization." >&2
-    echo "[DeepFashion2] Verify the mirror layout and archive contents under: $root" >&2
+echo "[DeepFashion2] Counts: train_images=${train_images} val_images=${val_images} test_images=${test_images} train_annos=${train_annos} val_annos=${val_annos}"
+echo "[DeepFashion2] Wrote classes.txt: $classes_file"
+echo "[DeepFashion2] Official reference: train_images=390884 val_images=33669 test_images=67342"
+
+if [[ "$train_images" -eq 0 || "$val_images" -eq 0 ]]; then
+    echo "[DeepFashion2] Error: one or more expected folders are empty. Verify the official archives and password." >&2
     exit 1
 fi
 
-echo "[DeepFashion2] Warning: this script uses a Kaggle mirror by default, not the official password-protected distribution." >&2
+if [[ "$train_images" -ne 390884 || "$val_images" -ne 33669 || "$test_images" -ne 67342 ]]; then
+    echo "[DeepFashion2] Warning: counts differ from the official DeepFashion2 release. The downloaded source may be partial or repackaged." >&2
+fi
