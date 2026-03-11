@@ -2,6 +2,7 @@
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
+
 [project]
 name = "yolo-train-pipeline"
 version = "0.1.0"
@@ -15,9 +16,11 @@ dependencies = [
   "opencv-python>=4.10,<5",
   "matplotlib>=3.8,<4",
   "pillow>=10,<13",
+  "gdown>=5.2,<6",
   "onnx>=1.20,<2",
   "onnxslim>=0.1.87",
 ]
+
 
 [project.optional-dependencies]
 cpu = [
@@ -28,6 +31,7 @@ cuda = [
   "onnxruntime-gpu>=1.24.3,<2",
   "onnxconverter-common>=1.16,<2",
 ]
+
 
 [project.scripts]
 yolo-convert-dataset = "tools.convert_dataset_to_yolo:main"
@@ -40,8 +44,10 @@ yolo-onnx-export = "tools.onnx.export:main"
 yolo-onnx-optimize = "tools.onnx.optimize:main"
 yolo-onnx-pipeline = "tools.onnx.pipeline:main"
 
+
 [tool.setuptools]
 include-package-data = false
+
 
 [tool.setuptools.packages.find]
 include = ["core*", "tools*"]

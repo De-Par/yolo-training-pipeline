@@ -72,7 +72,7 @@ yolo-convert-dataset \
 
 Use this when each image has a separate JSON file and category ids are resolved through a class-name file.
 
-Example:
+Generic example:
 
 ```bash
 yolo-convert-dataset \
@@ -83,6 +83,54 @@ yolo-convert-dataset \
   --val-images-dir data/raw/my_dataset/val/images \
   --val-annotations data/raw/my_dataset/val/annos \
   --class-names-file data/raw/my_dataset/classes.txt \
+  --bbox-format xyxy \
+  --clean
+```
+
+DeepFashion2 is the canonical example of this adapter in this repository.
+
+Download or organize it like this:
+
+```bash
+export DEEPFASHION2_ARCHIVE_PASSWORD='your-password'   # required for protected nested split archives
+./scripts/download_deepfashion2.sh --source official
+```
+
+Expected raw layout:
+
+```text
+data/raw/deepfashion2/
+├── classes.txt
+├── train/
+│   ├── annos/
+│   └── image/
+├── validation/
+│   ├── annos/
+│   └── image/
+├── test/
+│   └── image/
+├── json_for_validation/
+└── json_for_test/
+```
+
+The download script downloads the official archive folder, organizes `train` / `validation` / `test`, preserves the auxiliary evaluation metadata directories when present, and writes `classes.txt` itself in the official 13-class order, so the dataset is ready for conversion immediately.
+
+If a `per-image-json` annotation file does not include image `width` / `height`, the converter falls back to the actual image dimensions read from the corresponding file. This matches DeepFashion2, where those fields are not present in the per-image JSON records.
+
+Exact DeepFashion2 conversion command:
+
+```bash
+yolo-convert-dataset \
+  --dataset-name deepfashion2 \
+  --input-format per-image-json \
+  --train-images-dir data/raw/deepfashion2/train/image \
+  --train-annotations data/raw/deepfashion2/train/annos \
+  --val-images-dir data/raw/deepfashion2/validation/image \
+  --val-annotations data/raw/deepfashion2/validation/annos \
+  --class-names-file data/raw/deepfashion2/classes.txt \
+  --object-prefix item \
+  --category-id-key category_id \
+  --bbox-key bounding_box \
   --bbox-format xyxy \
   --clean
 ```

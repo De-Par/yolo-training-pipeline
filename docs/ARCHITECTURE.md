@@ -117,7 +117,7 @@ Non-responsibilities:
 Use it for:
 
 - environment bootstrap
-- demo dataset downloads
+- demo dataset downloads through separate Fashionpedia and DeepFashion2 scripts
 - demo model downloads
 
 Do not put pipeline-critical business logic there.

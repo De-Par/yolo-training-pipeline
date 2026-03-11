@@ -77,6 +77,15 @@ Supported raw input adapters today:
 - `coco-detection`
 - `per-image-json`
 
+Demo download scripts:
+
+- `scripts/download_fashionpedia.sh` for the public Fashionpedia demo flow
+- `scripts/download_deepfashion2.sh` for the official DeepFashion2 download and organize flow
+  - `--source official` downloads the official Google Drive folder via `gdown`
+  - `--source local` only unpacks archives already placed in `data/raw/deepfashion2/downloads/`
+  - protected nested zip files require `DEEPFASHION2_ARCHIVE_PASSWORD` or `--archive-password`
+  - the script also writes `data/raw/deepfashion2/classes.txt` for the `per-image-json` converter
+
 <table>
   <tr>
     <td><strong>📝 Note</strong><br>The pipeline is dataset-generic. Dataset-specific names such as Fashionpedia appear only in examples and demo scripts under <code>scripts/</code>.</td>
@@ -88,8 +97,10 @@ Supported raw input adapters today:
 ```text
 .
 ├── configs/
-│   ├── nvidia.example.yaml
-│   └── prepare.example.yaml
+│   ├── prepare/
+│   │   └── prepare.example.yaml
+│   └── train/
+│       └── nvidia.example.yaml
 ├── core/
 │   ├── common/
 │   ├── datasets/
@@ -102,7 +113,8 @@ Supported raw input adapters today:
 │   ├── ONNX.md
 │   └── TRAINING.md
 ├── scripts/
-│   ├── download_clothes_dataset.sh
+│   ├── download_deepfashion2.sh
+│   ├── download_fashionpedia.sh
 │   ├── download_yolo_models.sh
 │   └── setup_env.sh
 ├── tools/
@@ -176,10 +188,10 @@ Typical resulting path:
 models/YOLOv26/yolo26n.pt
 ```
 
-Then download the demo dataset:
+Then download the demo dataset with the dedicated Fashionpedia script:
 
 ```bash
-./scripts/download_clothes_dataset.sh --dataset fashionpedia
+./scripts/download_fashionpedia.sh
 ```
 
 Expected raw layout:
@@ -193,6 +205,34 @@ data/raw/fashionpedia/
     ├── annotations.json
     └── images/
 ```
+
+DeepFashion2 uses a separate raw flow:
+
+```bash
+export DEEPFASHION2_ARCHIVE_PASSWORD='your-password'   # required for protected nested split archives
+./scripts/download_deepfashion2.sh --source official
+```
+
+Expected raw layout after the script finishes:
+
+```text
+data/raw/deepfashion2/
+├── classes.txt
+├── train/
+│   ├── annos/
+│   └── image/
+├── validation/
+│   ├── annos/
+│   └── image/
+├── test/
+│   └── image/
+├── json_for_validation/
+└── json_for_test/
+```
+
+The DeepFashion2 script downloads the official archive folder, organizes `train` / `validation` / `test`, preserves the auxiliary evaluation metadata directories when present, and writes `classes.txt` itself in the official 13-class order, so it is ready for the `per-image-json` adapter.
+
+During conversion, if `width` / `height` are missing from the per-image JSON annotation, the converter automatically falls back to the actual image size. This is required for DeepFashion2.
 
 ### 3. Convert Fashionpedia to a YOLO-styled dataset
 
@@ -223,6 +263,24 @@ data/converted/fashionpedia_demo/
 ```
 
 After this step the dataset is already trainable.
+
+DeepFashion2 conversion uses the `per-image-json` adapter instead:
+
+```bash
+yolo-convert-dataset \
+  --dataset-name deepfashion2 \
+  --input-format per-image-json \
+  --train-images-dir data/raw/deepfashion2/train/image \
+  --train-annotations data/raw/deepfashion2/train/annos \
+  --val-images-dir data/raw/deepfashion2/validation/image \
+  --val-annotations data/raw/deepfashion2/validation/annos \
+  --class-names-file data/raw/deepfashion2/classes.txt \
+  --object-prefix item \
+  --category-id-key category_id \
+  --bbox-key bounding_box \
+  --bbox-format xyxy \
+  --clean
+```
 
 ### 4. Inspect the YOLO-styled dataset
 
@@ -413,7 +471,7 @@ Use them after training when you need runtime-specific artifacts for CPU or CUDA
 source scripts/setup_env.sh base
 
 ./scripts/download_yolo_models.sh --generation v26 --task detect --size n
-./scripts/download_clothes_dataset.sh --dataset fashionpedia
+./scripts/download_fashionpedia.sh
 
 yolo-convert-dataset \
   --dataset-name fashionpedia_demo \

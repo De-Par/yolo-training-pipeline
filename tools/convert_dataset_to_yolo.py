@@ -38,8 +38,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--category-id-key", type=str, default="category_id", help="Field name used to read class ids in per-image-json annotations.")
     parser.add_argument("--bbox-key", type=str, default="bounding_box", help="Field name used to read bounding boxes in per-image-json annotations.")
     parser.add_argument("--bbox-format", choices=["xyxy", "xywh"], default="xyxy", help="Bounding box format stored in per-image-json annotations.")
-    parser.add_argument("--image-width-key", type=str, default="width", help="Field name used to read image width in per-image-json annotations.")
-    parser.add_argument("--image-height-key", type=str, default="height", help="Field name used to read image height in per-image-json annotations.")
+    parser.add_argument("--image-width-key", type=str, default="width", help="Field name used to read image width in per-image-json annotations. Falls back to the actual image size when missing.")
+    parser.add_argument("--image-height-key", type=str, default="height", help="Field name used to read image height in per-image-json annotations. Falls back to the actual image size when missing.")
     return parser.parse_args()
 
 

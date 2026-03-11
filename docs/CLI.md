@@ -88,8 +88,8 @@ yolo-convert-dataset \
 | `--category-id-key` | key used for class id lookup |
 | `--bbox-key` | key holding box coordinates |
 | `--bbox-format` | `xyxy` or `xywh` |
-| `--image-width-key` | width field name |
-| `--image-height-key` | height field name |
+| `--image-width-key` | width field name; falls back to the actual image width when missing |
+| `--image-height-key` | height field name; falls back to the actual image height when missing |
 
 ## `yolo-print-stats`
 
