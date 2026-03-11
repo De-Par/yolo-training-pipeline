@@ -2,6 +2,7 @@
 data/
 models/
 runs/
+deploy/
 
 # Logs and reports
 *.log
@@ -50,3 +51,7 @@ Thumbs.db
 # Optional local config overrides
 .env
 .env.*
+configs/train/*
+!configs/train/*.example.yaml
+configs/prepare/*
+!configs/prepare/*.example.yaml
