@@ -1,18 +1,18 @@
-# 🧱 Architecture
+# Architecture
 
 **Navigation**
-[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
+[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
 
 The project is structured around a strict separation between library code and CLI code.
 
 ## Contents
 
-- [🗺️ High-Level Shape](#high-level-shape)
-- [📦 `core/`](#core)
-- [🛠️ `tools/`](#tools)
-- [📜 `scripts/`](#scripts)
-- [🎯 Design Rules](#design-rules)
-- [📦 Packaging](#packaging)
+- [High-Level Shape](#high-level-shape)
+- [`core/`](#core)
+- [`tools/`](#tools)
+- [`scripts/`](#scripts)
+- [Design Rules](#design-rules)
+- [Packaging](#packaging)
 
 <table>
   <tr>
@@ -20,24 +20,25 @@ The project is structured around a strict separation between library code and CL
   </tr>
 </table>
 
-## 🗺️ High-Level Shape
+## High-Level Shape
 
 - `core/` contains domain logic
 - `tools/` contains argument parsing and user-facing CLI behavior
 - `scripts/` contains shell automation and demo flows
-- `configs/train/` contains tracked training presets
-- `configs/prepare/` contains tracked dataset-mutation recipes
+- `configs/` contains tracked example YAMLs
 - `docs/` contains user-facing documentation
 
-## 📦 `core/`
+## `core/`
 
 ### `core/common/`
 
 Shared helpers and exceptions, for example:
 
 - filesystem helpers
-- copy/symlink helpers
+- console formatting
+- progress reporting
 - domain-level error types
+- CLI runtime adapters
 
 ### `core/datasets/`
 
@@ -67,7 +68,25 @@ Current responsibilities:
 - Ultralytics training execution
 - per-class AP export
 
-## 🛠️ `tools/`
+### `core/onnx/`
+
+Deployment-prep business logic.
+
+Current responsibilities:
+
+- exporting YOLO checkpoints to ONNX
+- ONNX Runtime graph optimization
+- calibration image handling for INT8 quantization
+- FP16 conversion for CUDA deployment
+- export plus optimize orchestration
+
+Design intent:
+
+- `exporter` is checkpoint-to-ONNX only
+- `optimizer` is ONNX-to-runtime-artifacts only
+- `pipeline` composes both when a one-shot flow is useful
+
+## `tools/`
 
 `tools/` is the CLI layer only.
 
@@ -78,14 +97,20 @@ Responsibilities:
 - print user-facing logs and errors
 - define stable console entrypoints
 
+Subareas:
+
+- top-level `tools/*.py` for dataset and training commands
+- `tools/onnx/*.py` for ONNX export and optimization commands
+
 Non-responsibilities:
 
 - dataset conversion internals
 - dataset inspection internals
 - recipe application logic
 - training planning internals
+- ONNX optimization internals
 
-## 📜 `scripts/`
+## `scripts/`
 
 `scripts/` is intentionally separate from the public CLI surface.
 
@@ -97,26 +122,31 @@ Use it for:
 
 Do not put pipeline-critical business logic there.
 
-## 🎯 Design Rules
+## Design Rules
 
 1. Raw dataset peculiarities enter the system only through `yolo-convert-dataset` adapters.
 2. `yolo-print-stats` is the mandatory analysis layer before dataset surgery.
 3. `yolo-prepare-dataset` is optional and destructive by design.
 4. Training consumes ordinary dataset YAMLs produced by conversion or preparation.
-5. `tools/` should stay replaceable without rewriting `core/`.
-6. New raw schemas should extend `convert_dataset_to_yolo`, not create parallel pipelines.
+5. `yolo-report-ap` is the metrics/reporting layer after training.
+6. ONNX export and optimization are post-training deployment stages.
+7. `tools/` should stay replaceable without rewriting `core/`.
+8. New raw schemas should extend `convert_dataset_to_yolo`, not create parallel pipelines.
 
-## 📦 Packaging
+## Packaging
 
-Public console scripts are defined in [`pyproject.toml`](../pyproject.toml):
+Public console scripts are defined in [`../pyproject.toml`](../pyproject.toml):
 
 - `yolo-convert-dataset`
 - `yolo-print-stats`
 - `yolo-prepare-dataset`
 - `yolo-train`
 - `yolo-report-ap`
+- `yolo-onnx-export`
+- `yolo-onnx-optimize`
+- `yolo-onnx-pipeline`
 
 ---
 
 **Next**
-[`Home`](../README.md) · [`CLI Reference`](CLI.md) · [`Dataset Guide`](DATASETS.md)
+[`Home`](../README.md) · [`CLI Reference`](CLI.md) · [`Dataset Guide`](DATASETS.md) · [`ONNX Guide`](ONNX.md)

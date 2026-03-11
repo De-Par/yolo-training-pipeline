@@ -1,40 +1,41 @@
-# 🏋️ Training Guide
+# Training Guide
 
 **Navigation**
-[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
+[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
 
 This guide covers the training side of the pipeline.
 
 ## Contents
 
-- [🚀 Main Entry Point](#main-entry-point)
-- [⚙️ Tracked Config](#tracked-config)
-- [🧪 Training on Converted vs Prepared Datasets](#training-on-converted-vs-prepared-datasets)
-- [🧩 Config + Override Pattern](#config-override-pattern)
-- [📁 Training Outputs](#training-outputs)
-- [📈 Per-Class AP Analysis](#per-class-ap-analysis)
-- [💡 Practical Advice](#practical-advice)
-- [🛠️ Common Failure Modes](#common-failure-modes)
+- [Main Entry Point](#main-entry-point)
+- [Tracked Config](#tracked-config)
+- [Training on Converted vs Prepared Datasets](#training-on-converted-vs-prepared-datasets)
+- [Config Plus Override Pattern](#config-plus-override-pattern)
+- [Training Outputs](#training-outputs)
+- [Per-Class AP Analysis](#per-class-ap-analysis)
+- [Val Versus Test](#val-versus-test)
+- [Practical Advice](#practical-advice)
+- [Common Failure Modes](#common-failure-modes)
 
-## 🚀 Main Entry Point
+## Main Entry Point
 
 Use:
 
 ```bash
-yolo-train --cfg configs/train/nvidia.yaml
+yolo-train --cfg configs/train/nvidia.example.yaml
 ```
 
 or provide the required fields from CLI.
 
-## ⚙️ Tracked Config
+## Tracked Config
 
-The repository currently tracks one training preset:
+The repository currently tracks one training preset example:
 
-- [`configs/train/nvidia.yaml`](../configs/train/nvidia.yaml)
+- [`../configs/train/nvidia.example.yaml`](../configs/train/nvidia.example.yaml)
 
-This is a documented NVIDIA-oriented baseline.
+This is a documented NVIDIA-oriented baseline example, not a locked policy file.
 
-## 🧪 Training on Converted vs Prepared Datasets
+## Training on Converted vs Prepared Datasets
 
 You can train on either of these:
 
@@ -51,13 +52,13 @@ yolo-train \
 
 If you applied preparation in place, the same dataset directory now contains the updated YAML and class mapping.
 
-## 🧩 Config + Override Pattern
+## Config Plus Override Pattern
 
 Recommended pattern:
 
 ```bash
 yolo-train \
-  --cfg configs/train/nvidia.yaml \
+  --cfg configs/train/nvidia.example.yaml \
   --data data/converted/my_dataset/my_dataset.yaml \
   --model models/YOLOv26/yolo26n.pt \
   --name exp-run
@@ -74,7 +75,7 @@ Keep CLI overrides short. The intended split is:
 - CLI for the most important run-level changes: `model`, `data`, `epochs`, `imgsz`, `batch`, `device`, `name`
 - YAML config for everything else: `workers`, `amp`, `cache`, `compile`, `val`, `seed`, `project`, `exist_ok`, `verbose`, and other Ultralytics keys
 
-## 📁 Training Outputs
+## Training Outputs
 
 Ultralytics writes into:
 
@@ -91,7 +92,7 @@ Typical artifacts:
 - training curves and metric plots
 - validation visualizations
 
-## 📈 Per-Class AP Analysis
+## Per-Class AP Analysis
 
 Use `yolo-report-ap` after training:
 
@@ -117,12 +118,12 @@ This is especially useful when:
 - aggregate mAP hides dead classes
 - you need evidence for future recipe changes in `yolo-prepare-dataset`
 
-### `val` vs `test`
+## Val Versus Test
 
 Use `val` while you are still making decisions about:
 
 - split recipes
-- class merges/drops
+- class merges or drops
 - model choice
 - training config
 
@@ -137,7 +138,7 @@ yolo-report-ap \
   --split test
 ```
 
-## 💡 Practical Advice
+## Practical Advice
 
 ### Use `yolo-print-stats` before training
 
@@ -176,7 +177,12 @@ Reduce in this order:
 - keep the train config under version control
 - treat the converted dataset as the reset point if preparation is destructive
 
-## 🛠️ Common Failure Modes
+### ONNX is downstream of training
+
+ONNX export and optimization belong to deployment prep, not training itself.
+Use [`ONNX Guide`](ONNX.md) after you already have a checkpoint that you want to serve.
+
+## Common Failure Modes
 
 ### Training falls back to CPU
 
@@ -197,4 +203,4 @@ Before changing optimizer settings, verify:
 ---
 
 **Next**
-[`CLI Reference`](CLI.md) · [`Architecture`](ARCHITECTURE.md) · [`Home`](../README.md)
+[`CLI Reference`](CLI.md) · [`ONNX Guide`](ONNX.md) · [`Architecture`](ARCHITECTURE.md) · [`Home`](../README.md)

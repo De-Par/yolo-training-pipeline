@@ -1,19 +1,22 @@
-# 🧰 CLI Reference
+# CLI Reference
 
 **Navigation**
-[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
+[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
 
 This document describes the current public CLI surface.
 
 ## Contents
 
-- [🚀 Public Commands](#public-commands)
-- [🔄 `yolo-convert-dataset`](#yolo-convert-dataset)
-- [📊 `yolo-print-stats`](#yolo-print-stats)
-- [🧱 `yolo-prepare-dataset`](#yolo-prepare-dataset)
-- [🏋️ `yolo-train`](#yolo-train)
-- [📈 `yolo-report-ap`](#yolo-report-ap)
-- [🛟 Fallback Entry Points](#fallback-entry-points)
+- [Public Commands](#public-commands)
+- [`yolo-convert-dataset`](#yolo-convert-dataset)
+- [`yolo-print-stats`](#yolo-print-stats)
+- [`yolo-prepare-dataset`](#yolo-prepare-dataset)
+- [`yolo-train`](#yolo-train)
+- [`yolo-report-ap`](#yolo-report-ap)
+- [`yolo-onnx-export`](#yolo-onnx-export)
+- [`yolo-onnx-optimize`](#yolo-onnx-optimize)
+- [`yolo-onnx-pipeline`](#yolo-onnx-pipeline)
+- [Fallback Entry Points](#fallback-entry-points)
 
 <table>
   <tr>
@@ -21,7 +24,7 @@ This document describes the current public CLI surface.
   </tr>
 </table>
 
-## 🚀 Public Commands
+## Public Commands
 
 | Command | Purpose |
 |---|---|
@@ -30,8 +33,11 @@ This document describes the current public CLI surface.
 | `yolo-prepare-dataset` | Mutate a YOLO-styled dataset in place from a YAML recipe |
 | `yolo-train` | Run Ultralytics training |
 | `yolo-report-ap` | Validate a checkpoint and export per-class AP reports |
+| `yolo-onnx-export` | Export a YOLO checkpoint to ONNX |
+| `yolo-onnx-optimize` | Optimize an ONNX model for CPU or CUDA deployment |
+| `yolo-onnx-pipeline` | Export and optimize in one command |
 
-## 🔄 `yolo-convert-dataset`
+## `yolo-convert-dataset`
 
 Convert raw detection data into a YOLO-styled dataset without changing class semantics.
 
@@ -85,7 +91,7 @@ yolo-convert-dataset \
 | `--image-width-key` | width field name |
 | `--image-height-key` | height field name |
 
-## 📊 `yolo-print-stats`
+## `yolo-print-stats`
 
 Print detailed stats for a YOLO-styled dataset.
 
@@ -112,52 +118,17 @@ yolo-print-stats --dataset-dir data/converted/my_dataset
 | `--output-json` | no | override JSON output path |
 | `--output-png` | no | override base PNG path, writes one `<stem>_<split>.png` file per detected split |
 
-### What it reports
-
-- image counts by split
-- label file counts by split
-- empty label counts
-- missing and orphan label files
-- total instance counts
-- mean bbox geometry
-- bbox area bins
-- per-class counts for every detected split plus totals
-- one split-specific mosaic PNG report per detected split in the same style as the Ultralytics labels overview
-
-<table>
-  <tr>
-    <td><strong>💡 Tip</strong><br>Use this command before every dataset mutation step. It is the analysis layer of the pipeline.</td>
-  </tr>
-</table>
-
-## 🧱 `yolo-prepare-dataset`
+## `yolo-prepare-dataset`
 
 Mutate a YOLO-styled dataset in place using a YAML recipe.
-
-This command is optional. After conversion, the dataset is already trainable.
-
-### Main effects
-
-- keep the current splits untouched
-- sample current splits independently
-- combine current splits and rebuild `train` / `val` / optional `test`
-- enforce minimum instance coverage in `val` / `test` during combined resplit
-- drop classes
-- rename classes
-- merge several old classes into a new class name
-- rewrite labels in place
-- regenerate `classes.txt` and `<dataset>.yaml`
-- write `prepare_report.json`
 
 ### Syntax
 
 ```bash
 yolo-prepare-dataset \
   --dataset-dir data/converted/my_dataset \
-  --recipe configs/prepare/yolo_dataset.yaml
+  --recipe configs/prepare/prepare.example.yaml
 ```
-
-Edit the tracked recipe before running it. The default file is intentionally no-op and is rejected until it requests a real change.
 
 ### Important arguments
 
@@ -198,7 +169,7 @@ Split modes:
 - `resplit_combined_random`: merge current splits and resplit by image fractions
 - `resplit_combined_by_instances`: merge current splits and satisfy `val` / `test` instance minimums before filling nominal fractions
 
-For `per_class_min_*`, the docs prefer compact YAML flow-style mappings such as `{23: 50, "shirt, blouse": 30}`.
+For `per_class_min_*`, examples in this repository prefer compact YAML flow-style mappings such as `{23: 50, "shirt, blouse": 30}`.
 
 Selector syntax:
 
@@ -208,49 +179,14 @@ Selector syntax:
 
 If a class name contains commas, quote it exactly as written in `classes.txt`.
 
-Example:
-
-```yaml
-split:
-  mode: resplit_combined_by_instances
-  seed: 42
-  train_fraction: 0.8
-  val_fraction: 0.1
-  test_fraction: 0.1
-  min_val_instances_per_class: 20
-  per_class_min_test_instances: {23: 50}
-
-classes:
-  keep: ["shirt, blouse", 23, "30-35"]
-  remap:
-    - name: footwear
-      from: [23]
-    - name: tops
-      from: ["shirt, blouse", "top, t-shirt, sweatshirt", 2, 3]
-```
-
-### Important behavior
-
-- this command mutates the dataset in place
-- it does not duplicate the dataset by default
-- if you want the original converted dataset again, rerun `yolo-convert-dataset`
-- combined resplit modes can create `test` when `split.test_fraction > 0`
-- a recipe that requests no changes is rejected on purpose
-
-<table>
-  <tr>
-    <td><strong>⚠️ Warning</strong><br>Treat <code>yolo-prepare-dataset</code> as a destructive step. It is meant for intentional dataset surgery, not casual inspection.</td>
-  </tr>
-</table>
-
-## 🏋️ `yolo-train`
+## `yolo-train`
 
 Run Ultralytics training on any YOLO dataset YAML produced by conversion or preparation.
 
 ### Syntax
 
 ```bash
-yolo-train --cfg configs/train/nvidia.yaml
+yolo-train --cfg configs/train/nvidia.example.yaml
 ```
 
 ### Important arguments
@@ -258,28 +194,17 @@ yolo-train --cfg configs/train/nvidia.yaml
 | Option | Required | Description |
 |---|:---:|---|
 | `--cfg` | no | YAML config with train parameters |
-| `--model` | cfg/cli | model checkpoint or architecture |
-| `--data` | cfg/cli | dataset YAML |
-| `--epochs` | no | number of epochs |
-| `--imgsz` | no | image size |
-| `--batch` | no | batch size |
-| `--device` | no | `cpu`, `0`, `cuda:0`, `mps` |
-| `--name` | no | run directory name |
+| `--data` | no | dataset YAML override |
+| `--model` | no | model checkpoint or architecture override |
+| `--epochs` | no | training epochs override |
+| `--imgsz` | no | square image size override |
+| `--batch` | no | batch size override |
+| `--device` | no | `cpu`, `0`, `cuda:0`, or `mps` |
+| `--name` | no | run directory name override |
 
-Everything else should live in the training YAML config, for example:
+Everything else should live in the training YAML config.
 
-- `workers`
-- `project`
-- `seed`
-- `amp`
-- `cache`
-- `compile`
-- `val`
-- `exist_ok`
-- `verbose`
-- any other Ultralytics train key
-
-## 📈 `yolo-report-ap`
+## `yolo-report-ap`
 
 Run validation and export per-class AP metrics to CSV and JSON.
 
@@ -311,7 +236,104 @@ yolo-report-ap \
 | `--top-k` | no | how many best/worst classes to print |
 | `--verbose` | no | verbose validation output |
 
-## 🛟 Fallback Entry Points
+## `yolo-onnx-export`
+
+Export a YOLO `.pt` checkpoint to ONNX.
+
+### Syntax
+
+```bash
+yolo-onnx-export \
+  --weights runs/my_run/weights/best.pt \
+  --output deploy/onnx/model.export.fp32.onnx \
+  --imgsz 1024
+```
+
+### Important arguments
+
+| Option | Required | Description |
+|---|:---:|---|
+| `--weights` | yes | source YOLO `.pt` checkpoint |
+| `--output` | no | output `.onnx` path |
+| `--imgsz` | no | one integer or two integers: `H W` |
+| `--batch` | no | export batch size |
+| `--device` | no | export device, for example `cpu` or `0` |
+| `--opset` | no | ONNX opset override |
+| `--dynamic` | no | export dynamic axes |
+| `--no-simplify` | no | disable graph simplification |
+
+## `yolo-onnx-optimize`
+
+Optimize an ONNX model for CPU or CUDA deployment.
+
+### Syntax
+
+```bash
+yolo-onnx-optimize \
+  --input deploy/onnx/model.export.fp32.onnx \
+  --output-dir deploy/onnx/cpu \
+  --target cpu
+```
+
+### Important arguments
+
+| Option | Required | Description |
+|---|:---:|---|
+| `--input` | yes | source `.onnx` model |
+| `--output-dir` | yes | directory for optimized artifacts |
+| `--target` | no | `cpu` or `cuda` |
+| `--graph-level` | no | ORT graph optimization level |
+| `--tag` | no | optional artifact name tag |
+| `--imgsz` | no | calibration image size as `N` or `H W` |
+| `--no-preprocess` | no | skip ORT quantization preprocessing |
+| `--int8` | no | generate INT8 QDQ artifacts for CPU |
+| `--fp16` | no | generate FP16 artifacts for CUDA |
+| `--calib-dir` | no | representative image directory for INT8 |
+| `--calib-size` | no | max calibration images |
+| `--calibration-method` | no | `minmax`, `entropy`, or `percentile` |
+| `--u8u8` | no | use QUInt8 instead of QInt8 |
+| `--reduce-range` | no | enable reduced-range quantization |
+| `--no-per-channel` | no | disable per-channel weight quantization |
+| `--keep-io-types` | no | keep original IO tensor types during FP16 conversion |
+
+<table>
+  <tr>
+    <td><strong>⚠️ Warning</strong><br><code>yolo-onnx-optimize</code> requires an ONNX Runtime environment profile. Use <code>source scripts/setup_env.sh cpu</code> for CPU optimization or <code>source scripts/setup_env.sh cuda</code> for CUDA optimization.</td>
+  </tr>
+</table>
+
+## `yolo-onnx-pipeline`
+
+Export a YOLO checkpoint to ONNX and optimize it in one command.
+
+### Syntax
+
+```bash
+yolo-onnx-pipeline \
+  --weights runs/my_run/weights/best.pt \
+  --artifact-dir deploy/onnx/cuda \
+  --target cuda \
+  --fp16
+```
+
+### Important arguments
+
+| Option | Required | Description |
+|---|:---:|---|
+| `--weights` | yes | source YOLO `.pt` checkpoint |
+| `--artifact-dir` | yes | directory where exported and optimized artifacts will be written |
+| `--imgsz` | no | export/calibration image size as `N` or `H W` |
+| `--batch` | no | export batch size |
+| `--export-device` | no | device used during Ultralytics export |
+| `--opset` | no | ONNX opset override |
+| `--dynamic` | no | export dynamic axes |
+| `--target` | no | `cpu` or `cuda` |
+| `--graph-level` | no | ORT graph optimization level |
+| `--int8` | no | generate INT8 artifacts |
+| `--fp16` | no | generate FP16 artifacts |
+| `--calib-dir` | no | calibration image directory for INT8 |
+
+## Fallback Entry Points
 
 If you are not using editable install yet, these file-based entrypoints still work:
 
@@ -320,8 +342,11 @@ If you are not using editable install yet, these file-based entrypoints still wo
 - `python tools/prepare_yolo_dataset.py`
 - `python tools/train.py`
 - `python tools/report_ap.py`
+- `python tools/onnx/export.py`
+- `python tools/onnx/optimize.py`
+- `python tools/onnx/pipeline.py`
 
 ---
 
 **Next**
-[`Dataset Guide`](DATASETS.md) · [`Training Guide`](TRAINING.md) · [`Architecture`](ARCHITECTURE.md)
+[`Dataset Guide`](DATASETS.md) · [`Training Guide`](TRAINING.md) · [`ONNX Guide`](ONNX.md) · [`Architecture`](ARCHITECTURE.md)

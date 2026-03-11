@@ -1,19 +1,19 @@
-# 🗂️ Dataset Guide
+# Dataset Guide
 
 **Navigation**
-[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
+[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
 
 This guide documents the dataset side of the pipeline.
 
 ## Contents
 
-- [🧱 Stage Order](#stage-order)
-- [🔄 Stage 3: Convert Raw Data](#stage-3-convert-raw-data)
-- [📊 Stage 4: Print YOLO Dataset Stats](#stage-4-print-yolo-dataset-stats)
-- [🧪 Stage 5: Prepare YOLO Dataset](#stage-5-prepare-yolo-dataset)
-- [🧾 Dataset Layouts](#dataset-layouts)
-- [🧪 Example Scenarios](#example-scenarios)
-- [💡 Practical Advice](#practical-advice)
+- [Stage Order](#stage-order)
+- [Stage 3: Convert Raw Data](#stage-3-convert-raw-data)
+- [Stage 4: Print YOLO Dataset Stats](#stage-4-print-yolo-dataset-stats)
+- [Stage 5: Prepare YOLO Dataset](#stage-5-prepare-yolo-dataset)
+- [Dataset Layouts](#dataset-layouts)
+- [Example Scenarios](#example-scenarios)
+- [Practical Advice](#practical-advice)
 
 <table>
   <tr>
@@ -21,7 +21,7 @@ This guide documents the dataset side of the pipeline.
   </tr>
 </table>
 
-## 🧱 Stage Order
+## Stage Order
 
 The intended dataset flow is:
 
@@ -37,7 +37,7 @@ Why this matters:
 - stats should drive decisions
 - preparation should only apply explicit dataset changes
 
-## 🔄 Stage 3: Convert Raw Data
+## Stage 3: Convert Raw Data
 
 Use `yolo-convert-dataset` to normalize raw annotations into a YOLO-styled dataset.
 
@@ -103,12 +103,10 @@ data/converted/<dataset_name>/
     └── val/
 ```
 
-Important point:
+After conversion the dataset is already trainable.
+Preparation is optional, not mandatory.
 
-- after conversion the dataset is already trainable
-- preparation is optional, not mandatory
-
-## 📊 Stage 4: Print YOLO Dataset Stats
+## Stage 4: Print YOLO Dataset Stats
 
 Use `yolo-print-stats` immediately after conversion.
 
@@ -120,8 +118,8 @@ yolo-print-stats --dataset-dir data/converted/my_dataset
 
 This step reports:
 
-- image counts
-- label counts
+- image counts by split
+- label counts by split
 - empty labels
 - missing or orphan labels
 - mean bbox geometry
@@ -132,24 +130,19 @@ It also writes:
 
 ```text
 data/converted/my_dataset/dataset_stats.json
-```
-
-and:
-
-```text
 data/converted/my_dataset/dataset_stats_train.png
 data/converted/my_dataset/dataset_stats_val.png
 data/converted/my_dataset/dataset_stats_test.png   # if test exists
 ```
 
-This is the report you should use when deciding whether to:
+Use this report when deciding whether to:
 
-- reduce splits
+- rebuild splits
 - drop classes
 - merge noisy classes
 - rename classes
 
-## 🧪 Stage 5: Prepare YOLO Dataset
+## Stage 5: Prepare YOLO Dataset
 
 Use `yolo-prepare-dataset` only when you intentionally want to change the YOLO-styled dataset.
 
@@ -157,16 +150,14 @@ This step mutates the dataset in place and is driven by a YAML recipe.
 
 The tracked starter recipe is:
 
-- [`configs/prepare/yolo_dataset.yaml`](../configs/prepare/yolo_dataset.yaml)
-
-Edit the recipe first. The tracked file is intentionally no-op by default and is rejected until you request a real split or class change.
+- [`../configs/prepare/prepare.example.yaml`](../configs/prepare/prepare.example.yaml)
 
 Example:
 
 ```bash
 yolo-prepare-dataset \
   --dataset-dir data/converted/my_dataset \
-  --recipe configs/prepare/yolo_dataset.yaml
+  --recipe configs/prepare/prepare.example.yaml
 ```
 
 ### What preparation can change
@@ -201,9 +192,7 @@ split:
 classes:
   keep: []
   drop: []
-  remap:
-    - name: footwear
-      from: [shoe, boot, sandal]
+  remap: []
 ```
 
 Split modes:
@@ -249,7 +238,6 @@ classes:
 The command rewrites the existing YOLO-styled dataset instead of creating a second copy.
 
 This saves disk space, but it is destructive.
-
 If you need the original converted dataset again, rerun `yolo-convert-dataset`.
 
 <table>
@@ -258,7 +246,7 @@ If you need the original converted dataset again, rerun `yolo-convert-dataset`.
   </tr>
 </table>
 
-## 🧾 Dataset Layouts
+## Dataset Layouts
 
 ### Converted dataset layout
 
@@ -283,7 +271,7 @@ prepare_report.json
 
 `classes.txt` and `<dataset>.yaml` are regenerated to match the new label space.
 
-## 🧪 Example Scenarios
+## Example Scenarios
 
 ### Scenario 1: train directly after conversion
 
@@ -309,7 +297,7 @@ yolo-print-stats --dataset-dir data/converted/warehouse_items
 
 yolo-prepare-dataset \
   --dataset-dir data/converted/warehouse_items \
-  --recipe configs/prepare/yolo_dataset.yaml
+  --recipe configs/prepare/prepare.example.yaml
 
 yolo-print-stats --dataset-dir data/converted/warehouse_items
 ```
@@ -328,10 +316,10 @@ Apply with:
 ```bash
 yolo-prepare-dataset \
   --dataset-dir data/converted/warehouse_items \
-  --recipe configs/prepare/yolo_dataset.yaml
+  --recipe configs/prepare/prepare.example.yaml
 ```
 
-## 💡 Practical Advice
+## Practical Advice
 
 - Convert first, mutate later.
 - Print stats before every destructive step.
@@ -342,4 +330,4 @@ yolo-prepare-dataset \
 ---
 
 **Next**
-[`CLI Reference`](CLI.md) · [`Training Guide`](TRAINING.md) · [`Architecture`](ARCHITECTURE.md)
+[`CLI Reference`](CLI.md) · [`Training Guide`](TRAINING.md) · [`ONNX Guide`](ONNX.md) · [`Architecture`](ARCHITECTURE.md)

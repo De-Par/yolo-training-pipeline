@@ -2,71 +2,64 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Ultralytics](https://img.shields.io/badge/ultralytics-YOLO-red)
+![ONNX](https://img.shields.io/badge/onnx-export%20%26%20optimize-yellow)
 ![Status](https://img.shields.io/badge/status-generic%20pipeline-brightgreen)
 
-A generic pipeline for converting raw detection datasets into YOLO format, inspecting YOLO-styled datasets, optionally mutating them with a recipe, training Ultralytics YOLO models, and exporting per-class AP reports.
+A generic pipeline for converting raw detection datasets into YOLO format, inspecting and optionally mutating YOLO-styled datasets, training Ultralytics YOLO models, exporting per-class AP reports, and preparing ONNX artifacts for deployment.
 
 ---
 
 **Navigation**
-[`Home`](README.md) · [`Datasets`](docs/DATASETS.md) · [`Training`](docs/TRAINING.md) · [`CLI`](docs/CLI.md) · [`Architecture`](docs/ARCHITECTURE.md)
+[`Home`](README.md) · [`Datasets`](docs/DATASETS.md) · [`Training`](docs/TRAINING.md) · [`ONNX`](docs/ONNX.md) · [`CLI`](docs/CLI.md) · [`Architecture`](docs/ARCHITECTURE.md)
 
 <table>
   <tr>
-    <td><strong>💡 Tip</strong><br>The repository is organized around a strict order of stages. Read this page first, then follow the commands in the same order.</td>
+    <td><strong>💡 Tip</strong><br>Follow the stages in order. Conversion should stay semantically faithful, stats should drive decisions, preparation should be intentional, and ONNX should be treated as a post-training deployment branch.</td>
   </tr>
 </table>
 
-```mermaid
-flowchart LR
-    A["1. Setup environment"]
-    B["2. Download assets"]
-    C["3. Convert dataset"]
-    D["4. Print dataset stats"]
-    E["5. Prepare dataset (optional)"]
-    F["6. Train model"]
-    G["7. Export AP report"]
+## Pipeline At A Glance
 
-    A --> B --> C --> D
-    D -->|"train directly"| F
-    D -->|"modify dataset"| E --> F
-    F --> G
+```text
+Environment
+  source scripts/setup_env.sh [base|cpu|cuda]
+
+Dataset branch
+  raw data
+    -> yolo-convert-dataset
+    -> yolo-print-stats
+    -> yolo-prepare-dataset (optional)
+    -> yolo-print-stats (recommended after prepare)
+
+Training branch
+  dataset.yaml + model.pt
+    -> yolo-train
+    -> yolo-report-ap
+
+Deployment branch
+  best.pt
+    -> yolo-onnx-export
+    -> yolo-onnx-optimize
+  or
+  best.pt
+    -> yolo-onnx-pipeline
 ```
 
-## ✨ Pipeline Order
-
-The intended pipeline is:
-
-1. create an isolated environment
-2. download model weights and raw dataset files
-3. convert the raw dataset into a YOLO-styled dataset without changing its semantics
-4. print statistics for the YOLO-styled dataset and decide what needs to change
-5. optionally mutate the YOLO-styled dataset in place using a YAML recipe
-6. train a YOLO model from config or CLI
-7. collect weights and validation reports
-
-This split is intentional:
-
-- `core/` contains business logic
-- `tools/` contains CLI only
-- `scripts/` contains automation and demo shell flows
-
-More detail: [Architecture](docs/ARCHITECTURE.md)
-
-## 🧭 Documentation Map
+## Documentation Map
 
 | I want to... | Go here |
 |---|---|
-| understand the dataset flow | [Dataset Guide](docs/DATASETS.md) |
+| understand dataset conversion and prepare rules | [Dataset Guide](docs/DATASETS.md) |
+| run and tune training | [Training Guide](docs/TRAINING.md) |
+| export and optimize ONNX artifacts | [ONNX Guide](docs/ONNX.md) |
 | see exact commands and flags | [CLI Reference](docs/CLI.md) |
-| run training and analyze metrics | [Training Guide](docs/TRAINING.md) |
-| understand the code layout | [Architecture](docs/ARCHITECTURE.md) |
-| inspect the tracked NVIDIA preset | [`configs/train/nvidia.yaml`](configs/train/nvidia.yaml) |
-| inspect the prepare recipe format | [`configs/prepare/yolo_dataset.yaml`](configs/prepare/yolo_dataset.yaml) |
+| understand code layout | [Architecture](docs/ARCHITECTURE.md) |
+| inspect the tracked train config example | [`configs/train/nvidia.example.yaml`](configs/train/nvidia.example.yaml) |
+| inspect the tracked prepare recipe example | [`configs/prepare/prepare.example.yaml`](configs/prepare/prepare.example.yaml) |
 
-## ✅ Public CLI Surface
+## Public CLI Surface
 
-Installable commands from `pyproject.toml`:
+Installable commands from [`pyproject.toml`](pyproject.toml):
 
 | Command | Purpose |
 |---|---|
@@ -75,6 +68,9 @@ Installable commands from `pyproject.toml`:
 | `yolo-prepare-dataset` | Mutate a YOLO-styled dataset in place using a YAML recipe |
 | `yolo-train` | Launch Ultralytics training |
 | `yolo-report-ap` | Export per-class AP metrics |
+| `yolo-onnx-export` | Export a YOLO `.pt` checkpoint to ONNX |
+| `yolo-onnx-optimize` | Optimize an ONNX model for CPU or CUDA runtime |
+| `yolo-onnx-pipeline` | Export and optimize in one command |
 
 Supported raw input adapters today:
 
@@ -83,27 +79,27 @@ Supported raw input adapters today:
 
 <table>
   <tr>
-    <td><strong>📝 Note</strong><br>The pipeline is dataset-generic. Dataset-specific names such as Fashionpedia appear only in examples and demo scripts.</td>
+    <td><strong>📝 Note</strong><br>The pipeline is dataset-generic. Dataset-specific names such as Fashionpedia appear only in examples and demo scripts under <code>scripts/</code>.</td>
   </tr>
 </table>
 
-## 📁 Project Layout
+## Project Layout
 
 ```text
 .
 ├── configs/
-│   ├── prepare/
-│   │   └── yolo_dataset.yaml
-│   └── train/
-│       └── nvidia.yaml
+│   ├── nvidia.example.yaml
+│   └── prepare.example.yaml
 ├── core/
 │   ├── common/
 │   ├── datasets/
+│   ├── onnx/
 │   └── training/
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── CLI.md
 │   ├── DATASETS.md
+│   ├── ONNX.md
 │   └── TRAINING.md
 ├── scripts/
 │   ├── download_clothes_dataset.sh
@@ -111,29 +107,38 @@ Supported raw input adapters today:
 │   └── setup_env.sh
 ├── tools/
 │   ├── convert_dataset_to_yolo.py
+│   ├── onnx/
 │   ├── prepare_yolo_dataset.py
 │   ├── print_yolo_dataset_stats.py
 │   ├── report_ap.py
 │   └── train.py
-├── pyproject.toml
+└── pyproject.toml
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
-This is a full demo flow on `Fashionpedia`, from zero to the first training run.
+This is a full demo flow on `Fashionpedia`, from environment setup to the first training run and optional ONNX export.
 
 ### 1. Create the environment
 
-Create a virtual environment isolated from the system Python and install project dependencies:
+Pick the environment profile that matches your next steps:
+
+- `base`: dataset pipeline, training, report export, ONNX export only
+- `cpu`: everything in `base` plus ONNX Runtime CPU optimization and INT8 quantization
+- `cuda`: everything in `base` plus ONNX Runtime CUDA optimization and FP16 conversion
+
+Examples:
 
 ```bash
-source scripts/setup_env.sh
+source scripts/setup_env.sh base
+source scripts/setup_env.sh cpu
+source scripts/setup_env.sh cuda
 ```
 
 What `setup_env.sh` does:
 
 - creates `.venv`
-- upgrades `pip`, `setuptools`, and `wheel` inside `.venv`
+- upgrades `pip`, `setuptools`, and `wheel`
 - installs the project from `pyproject.toml`
 - activates `.venv` in the current shell
 - exposes the `yolo-*` commands through editable install
@@ -146,11 +151,14 @@ yolo-print-stats --help
 yolo-prepare-dataset --help
 yolo-train --help
 yolo-report-ap --help
+yolo-onnx-export --help
+yolo-onnx-optimize --help
+yolo-onnx-pipeline --help
 ```
 
 <table>
   <tr>
-    <td><strong>⚠️ Warning</strong><br>Run <code>source scripts/setup_env.sh</code>, not <code>bash scripts/setup_env.sh</code>, if you want the environment to stay active in the current shell.</td>
+    <td><strong>⚠️ Warning</strong><br>Run <code>source scripts/setup_env.sh ...</code>, not <code>bash scripts/setup_env.sh ...</code>, if you want the environment to stay active in the current shell.</td>
   </tr>
 </table>
 
@@ -186,14 +194,7 @@ data/raw/fashionpedia/
     └── images/
 ```
 
-Quick sanity check:
-
-```bash
-ls data/raw/fashionpedia/train
-ls data/raw/fashionpedia/val
-```
-
-### 3. Convert Fashionpedia to YOLO format
+### 3. Convert Fashionpedia to a YOLO-styled dataset
 
 This stage only converts the raw schema into a YOLO-styled dataset. It should not change class semantics or act as an optimizer stage.
 
@@ -221,99 +222,51 @@ data/converted/fashionpedia_demo/
 └── labels/
 ```
 
-Important point:
+After this step the dataset is already trainable.
 
-- after this step you already have a trainable YOLO-styled dataset
-- if you do not need any class surgery or split changes, you can train directly on `fashionpedia_demo.yaml`
+### 4. Inspect the YOLO-styled dataset
 
-### 4. Print stats for the YOLO-styled dataset
-
-This is the analysis step. Use it before touching the dataset.
+Use stats before touching the dataset:
 
 ```bash
 yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
 ```
 
-What this prints:
+Main outputs:
 
-- per-split image counts for `train`, `val`, and optional `test`
-- label file counts
-- missing / orphan label counts
-- empty label counts
-- total instances
-- mean bbox width / height / area
-- mean bbox center position
-- area bins for tiny / small / medium / large objects
-- a per-class table with one column set per detected split plus totals
+- `dataset_stats.json`
+- `dataset_stats_train.png`
+- `dataset_stats_val.png`
+- `dataset_stats_test.png` when the dataset contains `test`
 
-It also writes JSON by default:
+This is the report to use when deciding whether to resplit, drop classes, or merge noisy labels.
 
-```text
-data/converted/fashionpedia_demo/dataset_stats.json
-```
+### 5. Optionally mutate the YOLO-styled dataset in place
 
-And it also writes one mosaic PNG report per detected split:
+This step is optional. Use it only when you want to change the dataset itself.
 
-```text
-data/converted/fashionpedia_demo/dataset_stats_train.png
-data/converted/fashionpedia_demo/dataset_stats_val.png
-data/converted/fashionpedia_demo/dataset_stats_test.png   # if test exists
-```
+The tracked starter recipe is:
 
-This is the report you should look at before deciding what to change in the next step.
-
-### 5. Optionally prepare the YOLO-styled dataset in place
-
-This step is optional. Use it only if you want to change the dataset itself.
-
-Typical reasons:
-
-- resplit `train` / `val` and optionally create `test`
-- satisfy minimum instance coverage in `val` / `test`
-- reduce existing splits for smoke runs
-- drop classes
-- rename classes
-- merge several old classes into a new class name
-
-Preparation is driven by a YAML recipe.
-
-Start from the example recipe and edit it before running `yolo-prepare-dataset`:
-
-- [`configs/prepare/yolo_dataset.yaml`](configs/prepare/yolo_dataset.yaml)
-
-Selector syntax in the recipe:
-
-- exact class names, for example `"shirt, blouse"`
-- numeric class ids, for example `23`
-- id ranges, for example `"30-35"`
-
-If a class name contains commas, quote it exactly as written in `classes.txt`.
+- [`configs/prepare/prepare.example.yaml`](configs/prepare/prepare.example.yaml)
 
 Apply it like this:
 
 ```bash
 yolo-prepare-dataset \
   --dataset-dir data/converted/fashionpedia_demo \
-  --recipe configs/prepare/yolo_dataset.yaml
+  --recipe configs/prepare/prepare.example.yaml
 ```
 
-Important behavior:
+Typical reasons to use it:
 
-- this step mutates the YOLO-styled dataset in place
-- it does not create a second copy by default
-- this saves disk space but is destructive
-- if you need the original converted dataset back, rerun step 3
-- a recipe that requests no changes is rejected on purpose
+- resplit `train` / `val` and optionally create `test`
+- enforce minimum instance coverage in `val` / `test`
+- shrink the dataset for smoke runs
+- drop classes
+- rename classes
+- merge several classes into a new taxonomy
 
-What gets updated in place:
-
-- images removed by split sampling
-- labels rewritten after class drops / remaps / merges
-- `classes.txt`
-- `<dataset>.yaml`
-- `prepare_report.json`
-
-Recommended follow-up after preparation:
+Recommended follow-up:
 
 ```bash
 yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
@@ -321,9 +274,9 @@ yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
 
 ### 6. Launch training
 
-The tracked NVIDIA preset is here:
+The tracked NVIDIA-oriented example is:
 
-- [`configs/train/nvidia.yaml`](configs/train/nvidia.yaml)
+- [`configs/train/nvidia.example.yaml`](configs/train/nvidia.example.yaml)
 
 At minimum, make sure these fields point to the dataset and checkpoint you want:
 
@@ -335,20 +288,20 @@ data: data/converted/fashionpedia_demo/fashionpedia_demo.yaml
 Then start training:
 
 ```bash
-yolo-train --cfg configs/train/nvidia.yaml
+yolo-train --cfg configs/train/nvidia.example.yaml
 ```
 
-Or override from CLI:
+Or override the most important runtime knobs from CLI:
 
 ```bash
 yolo-train \
-  --cfg configs/train/nvidia.yaml \
+  --cfg configs/train/nvidia.example.yaml \
   --model models/YOLOv26/yolo26n.pt \
   --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
   --name fashionpedia-demo-run
 ```
 
-Typical training outputs:
+Typical outputs:
 
 ```text
 runs/<name>/
@@ -370,32 +323,94 @@ yolo-report-ap \
   --split val
 ```
 
-Default output location:
+Use `val` while you are still changing the recipe, model, or training config.
+Use `test` only for the final holdout evaluation after those decisions are fixed.
 
-```text
-runs/analysis/
-```
+### 8. Optionally prepare ONNX artifacts for deployment
 
-This gives you:
-
-- CSV with one row per class
-- JSON with global metrics and per-class values
-
-Terminology:
-
-- `AP` = `Average Precision`
-- `mAP` = `mean Average Precision`
-
-In object detection, `AP` is the area under the precision/recall curve for one class.
-`mAP` is the mean of those AP values across classes.
-
-Use `val` while you are still tuning the pipeline.
-Use `test` only for the final holdout evaluation after the recipe, config, and model are already fixed.
-
-### Command recap
+Export a checkpoint to ONNX:
 
 ```bash
-source scripts/setup_env.sh
+yolo-onnx-export \
+  --weights runs/fashionpedia-demo-run/weights/best.pt \
+  --output deploy/onnx/fashionpedia_demo.export.fp32.onnx \
+  --imgsz 1024
+```
+
+Optimize an ONNX model for a target runtime:
+
+```bash
+yolo-onnx-optimize \
+  --input deploy/onnx/fashionpedia_demo.export.fp32.onnx \
+  --output-dir deploy/onnx/cpu \
+  --target cpu \
+  --int8 \
+  --calib-dir data/raw/fashionpedia/train/images
+```
+
+Or run export + optimize in one command:
+
+```bash
+yolo-onnx-pipeline \
+  --weights runs/fashionpedia-demo-run/weights/best.pt \
+  --artifact-dir deploy/onnx/cuda \
+  --target cuda \
+  --fp16
+```
+
+<table>
+  <tr>
+    <td><strong>📝 Note</strong><br>ONNX export is a post-training deployment branch. It does not replace <code>yolo-report-ap</code>; you still need a metrics step on <code>val</code> or <code>test</code>.</td>
+  </tr>
+</table>
+
+## Design Intent
+
+The repository is organized around clean stage boundaries.
+
+### Conversion
+
+`yolo-convert-dataset` absorbs raw schema differences and produces a clean YOLO-styled dataset.
+
+It should not:
+
+- drop classes for experimentation
+- merge labels for task design
+- act as a tuning stage
+
+### Stats
+
+`yolo-print-stats` is the inspection stage.
+
+Use it to answer questions like:
+
+- which classes dominate?
+- how many empty labels exist?
+- how many tiny objects exist?
+- how strong is the train/val imbalance?
+- which classes should be merged or removed?
+
+### Preparation
+
+`yolo-prepare-dataset` is the mutation stage.
+
+It is optional because after conversion you already have a valid YOLO dataset.
+Treat it as destructive and deliberate.
+
+### Training and report export
+
+`yolo-train` produces checkpoints.
+`yolo-report-ap` is the evaluation/reporting stage for per-class AP.
+
+### ONNX and deployment prep
+
+`yolo-onnx-export` and `yolo-onnx-optimize` are deployment-oriented stages.
+Use them after training when you need runtime-specific artifacts for CPU or CUDA inference.
+
+## Command Recap
+
+```bash
+source scripts/setup_env.sh base
 
 ./scripts/download_yolo_models.sh --generation v26 --task detect --size n
 ./scripts/download_clothes_dataset.sh --dataset fashionpedia
@@ -413,12 +428,12 @@ yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
 
 yolo-prepare-dataset \
   --dataset-dir data/converted/fashionpedia_demo \
-  --recipe configs/prepare/yolo_dataset.yaml
+  --recipe configs/prepare/prepare.example.yaml
 
 yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
 
 yolo-train \
-  --cfg configs/train/nvidia.yaml \
+  --cfg configs/train/nvidia.example.yaml \
   --model models/YOLOv26/yolo26n.pt \
   --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
   --name fashionpedia-demo-run
@@ -429,78 +444,15 @@ yolo-report-ap \
   --split val
 ```
 
-## 🧩 Design Intent
+## Practical Advice
 
-The dataset pipeline has three distinct dataset-facing stages.
-
-### Stage 3: conversion
-
-`yolo-convert-dataset` absorbs raw schema differences and produces a clean YOLO-styled dataset.
-
-It should not:
-
-- drop classes for experimentation
-- merge labels for task design
-- act as a tuning stage
-
-### Stage 4: stats
-
-`yolo-print-stats` is the inspection stage.
-
-Use it to answer questions like:
-
-- which classes dominate?
-- how many empty labels exist?
-- how many tiny objects exist?
-- how strong is the train/val imbalance?
-- which classes should be merged or removed?
-
-### Stage 5: preparation
-
-`yolo-prepare-dataset` is the mutation stage.
-
-It is optional because after conversion you already have a valid YOLO dataset.
-
-Use it only when you intentionally want to change the dataset itself.
-
-## 🛠️ Demo Scripts
-
-`scripts/` is not the canonical pipeline interface.
-
-Use it for:
-
-- environment setup
-- demo dataset download
-- demo model download
-
-The canonical pipeline interface is the installable CLI from `pyproject.toml`.
-
-## 💡 Practical Advice
-
-### Use stats before prepare
-
-Do not merge or drop classes blindly.
-
-The intended order is:
-
-1. convert
-2. print stats
-3. decide changes
-4. prepare
-5. print stats again
-6. train
-
-### Treat `prepare` as destructive
-
-Because `yolo-prepare-dataset` mutates the dataset in place, treat the converted dataset as a working copy.
-
-If you want a pristine version again, rerun `yolo-convert-dataset`.
-
-### Keep training config stable
-
-Use YAML for stable defaults and CLI only for small temporary overrides.
+- Use stats before every destructive dataset step.
+- Treat the converted dataset as the reset point if preparation is destructive.
+- Keep the prepare recipe and train config under version control.
+- Use `base` for pure training work, `cpu` for CPU ONNX optimization, and `cuda` for CUDA ONNX optimization.
+- Keep deployment artifacts outside `runs/` so training outputs and deployment outputs do not mix.
 
 ---
 
 **Next**
-[`Dataset Guide`](docs/DATASETS.md) · [`CLI Reference`](docs/CLI.md) · [`Training Guide`](docs/TRAINING.md)
+[`Dataset Guide`](docs/DATASETS.md) · [`Training Guide`](docs/TRAINING.md) · [`ONNX Guide`](docs/ONNX.md) · [`CLI Reference`](docs/CLI.md)
