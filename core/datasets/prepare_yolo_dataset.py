@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 
@@ -64,6 +65,7 @@ class DatasetImageItem:
     label_path: Optional[Path]
     name: str
     stem: str
+    relative_key: str
     class_counts: Dict[int, int]
 
 
@@ -136,6 +138,7 @@ def _load_split_config(payload: Dict[str, Any]) -> PrepareSplitConfig:
         )
 
     test_fraction_default = 1.0 if mode == "sample_existing" else 0.0
+
     split = PrepareSplitConfig(
         mode=mode,
         seed=int(split_payload.get("seed", payload.get("sample_seed", 42))),
@@ -255,8 +258,6 @@ def _parse_label_counts(label_path: Optional[Path]) -> Dict[int, int]:
 def _collect_dataset_items(dataset_dir: Path, splits: Sequence[str]) -> CollectedDatasetItems:
     items: List[DatasetImageItem] = []
     dropped_orphan_labels = 0
-    seen_stems: Dict[str, str] = {}
-    seen_names: Dict[str, str] = {}
 
     for split in splits:
         images_dir = require_existing(dataset_dir / "images" / split, f"images/{split}")
@@ -267,21 +268,10 @@ def _collect_dataset_items(dataset_dir: Path, splits: Sequence[str]) -> Collecte
         dropped_orphan_labels += len(label_stems - image_stems)
 
         for image_path in image_paths:
-            if image_path.stem in seen_stems:
-                raise PipelineError(
-                    f"Duplicate image stem across dataset splits: '{image_path.stem}'",
-                    hint="Combined resplit requires globally unique image stems because YOLO labels are stem-based.",
-                )
-            if image_path.name in seen_names:
-                raise PipelineError(
-                    f"Duplicate image filename across dataset splits: '{image_path.name}'",
-                    hint="Rename colliding images or keep the existing split layout instead of using a combined resplit.",
-                )
-            seen_stems[image_path.stem] = split
-            seen_names[image_path.name] = split
             label_path = labels_dir / f"{image_path.stem}.txt" if labels_dir.exists() else None
             if label_path is not None and not label_path.exists():
                 label_path = None
+            relative_key = str(image_path.relative_to(images_dir).with_suffix(""))
             items.append(
                 DatasetImageItem(
                     source_split=split,
@@ -289,6 +279,7 @@ def _collect_dataset_items(dataset_dir: Path, splits: Sequence[str]) -> Collecte
                     label_path=label_path,
                     name=image_path.name,
                     stem=image_path.stem,
+                    relative_key=relative_key,
                     class_counts=_parse_label_counts(label_path),
                 )
             )
@@ -538,6 +529,30 @@ def _allocate_combined_random(
     return assignments, {"mode": split_config.mode, "seed": split_config.seed, "target_images": targets}
 
 
+def _sanitize_name_token(value: str) -> str:
+    token = normalize_name(value).replace('-', '_')
+    return token or 'item'
+
+
+def _build_hashed_name(item: DatasetImageItem, used_stems: Set[str], used_names: Set[str]) -> tuple[str, str]:
+    suffix = item.image_path.suffix.lower() or item.image_path.suffix
+    payload = f"{item.source_split}::{item.relative_key}::{item.name}".encode("utf-8")
+    digest = hashlib.sha1(payload).hexdigest()
+    candidate_stem = digest[:20]
+    candidate_name = f"{candidate_stem}{suffix}"
+    if candidate_stem not in used_stems and candidate_name not in used_names:
+        return candidate_stem, candidate_name
+
+    counter = 2
+    while True:
+        salted = hashlib.sha1(payload + f"::{counter}".encode("utf-8")).hexdigest()
+        candidate_stem = salted[:20]
+        candidate_name = f"{candidate_stem}{suffix}"
+        if candidate_stem not in used_stems and candidate_name not in used_names:
+            return candidate_stem, candidate_name
+        counter += 1
+
+
 def _rewrite_dataset_splits(
     dataset_dir: Path,
     source_splits: Sequence[str],
@@ -560,21 +575,39 @@ def _rewrite_dataset_splits(
     if progress_callback is not None:
         progress_callback("prepare:split:combined:init", 0, total_items, "prepare:split:combined")
 
+    used_stems: Set[str] = set()
+    used_names: Set[str] = set()
+    renamed_items = 0
     moved = 0
+    rename_samples: List[Dict[str, str]] = []
     for split in active_splits:
         for item in assignments[split]:
-            target_image = images_temp_root / split / item.name
+            target_stem, target_name = _build_hashed_name(item, used_stems, used_names)
+            used_stems.add(target_stem)
+            used_names.add(target_name)
+
+            target_image = images_temp_root / split / target_name
             item.image_path.rename(target_image)
             if item.label_path is not None and item.label_path.exists():
-                target_label = labels_temp_root / split / item.label_path.name
+                target_label = labels_temp_root / split / f"{target_stem}.txt"
                 item.label_path.rename(target_label)
+
+            if target_name != item.name:
+                renamed_items += 1
+                if len(rename_samples) < 10:
+                    rename_samples.append({
+                        "source_split": item.source_split,
+                        "old_name": item.name,
+                        "new_name": target_name,
+                    })
+
             moved += 1
             if progress_callback is not None:
                 progress_callback(
                     "prepare:split:combined",
                     moved,
                     total_items,
-                    f"prepare:split:combined: {item.name}",
+                    f"prepare:split:combined: {target_name}",
                 )
 
     for split in source_splits:
@@ -591,6 +624,8 @@ def _rewrite_dataset_splits(
     return {
         "active_splits": active_splits,
         "images_per_split": {split: len(assignments[split]) for split in active_splits},
+        "renamed_items": renamed_items,
+        "rename_samples": rename_samples,
     }
 
 
@@ -846,6 +881,12 @@ def prepare_yolo_dataset(
         log(
             format_warning(
                 f"Dropped orphan labels during combined resplit: {split_summary['dropped_orphan_labels']}"
+            )
+        )
+    if split_summary.get("renamed_items", 0) > 0:
+        log(
+            format_info(
+                f"Renamed image/label pairs during combined resplit: {split_summary['renamed_items']}"
             )
         )
 

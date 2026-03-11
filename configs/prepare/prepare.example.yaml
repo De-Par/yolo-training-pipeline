@@ -26,6 +26,10 @@ split:
   #   instance targets before filling nominal fractions
   mode: keep_existing
 
+  # Combined resplit modes always rename moved image/label pairs to stable
+  # unique hash-based names. This avoids filename and label-stem collisions
+  # when train/val/test are merged and rebuilt.
+
   # Random seed used by sample_existing and combined resplit modes.
   seed: 42
 
