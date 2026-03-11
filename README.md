@@ -284,6 +284,8 @@ yolo-convert-dataset \
 
 ### 4. Inspect the YOLO-styled dataset
 
+Combined prepare resplit always renames moved image/label pairs to stable unique hash-based names. This avoids filename and label-stem collisions when train/val/test are merged and rebuilt.
+
 Use stats before touching the dataset:
 
 ```bash

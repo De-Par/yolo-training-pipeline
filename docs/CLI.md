@@ -91,6 +91,10 @@ yolo-convert-dataset \
 | `--image-width-key` | width field name; falls back to the actual image width when missing |
 | `--image-height-key` | height field name; falls back to the actual image height when missing |
 
+`yolo-prepare-dataset` recipe note:
+
+- Combined resplit modes always rename moved image/label pairs to stable unique hash-based names.
+
 ## `yolo-print-stats`
 
 Print detailed stats for a YOLO-styled dataset.

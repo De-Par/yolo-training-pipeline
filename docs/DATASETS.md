@@ -243,6 +243,8 @@ classes:
   remap: []
 ```
 
+Combined prepare resplit always renames moved image/label pairs to stable unique hash-based names. This avoids filename and label-stem collisions when train/val/test are merged and rebuilt.
+
 Split modes:
 
 - `keep_existing`: preserve the current split boundaries
