@@ -10,7 +10,7 @@ A generic pipeline for converting raw detection datasets into YOLO format, inspe
 ---
 
 **Navigation**
-[`Home`](README.md) · [`Datasets`](docs/DATASETS.md) · [`Training`](docs/TRAINING.md) · [`ONNX`](docs/ONNX.md) · [`CLI`](docs/CLI.md) · [`Architecture`](docs/ARCHITECTURE.md)
+[`Home`](README.md) · [`Datasets`](docs/DATASETS.md) · [`Training`](docs/TRAINING.md) · [`Bench`](docs/BENCH.md) · [`ONNX`](docs/ONNX.md) · [`CLI`](docs/CLI.md) · [`Architecture`](docs/ARCHITECTURE.md)
 
 <table>
   <tr>
@@ -51,11 +51,13 @@ Deployment branch
 |---|---|
 | understand dataset conversion and prepare rules | [Dataset Guide](docs/DATASETS.md) |
 | run and tune training | [Training Guide](docs/TRAINING.md) |
+| benchmark latency, FPS, and holdout quality | [Bench Guide](docs/BENCH.md) |
 | export and optimize ONNX artifacts | [ONNX Guide](docs/ONNX.md) |
 | see exact commands and flags | [CLI Reference](docs/CLI.md) |
 | understand code layout | [Architecture](docs/ARCHITECTURE.md) |
 | inspect the tracked train config example | [`configs/train/nvidia.example.yaml`](configs/train/nvidia.example.yaml) |
 | inspect the tracked prepare recipe example | [`configs/prepare/prepare.example.yaml`](configs/prepare/prepare.example.yaml) |
+| inspect the tracked benchmark config examples | [`configs/bench/cpu.example.yaml`](configs/bench/cpu.example.yaml), [`configs/bench/gpu.example.yaml`](configs/bench/gpu.example.yaml) |
 
 ## Public CLI Surface
 
@@ -71,6 +73,9 @@ Installable commands from [`pyproject.toml`](pyproject.toml):
 | `yolo-onnx-export` | Export a YOLO `.pt` checkpoint to ONNX |
 | `yolo-onnx-optimize` | Optimize an ONNX model for CPU or CUDA runtime |
 | `yolo-onnx-pipeline` | Export and optimize in one command |
+| `yolo-benchmark-report` | Measure inference speed vs hardware points and render a PNG quality/speed report |
+
+The benchmark config uses `dataset.source` as the default benchmark source, usually `test`. Optional `dataset.speed` and `dataset.quality` blocks override that source only when you explicitly need different splits or direct image/label paths. If `dataset.quality` uses a dataset YAML and does not set `split`, it also defaults to `test`.
 
 Supported raw input adapters today:
 
@@ -97,17 +102,22 @@ Demo download scripts:
 ```text
 .
 ├── configs/
+│   ├── bench/
+│   │   ├── cpu.example.yaml
+│   │   └── gpu.example.yaml
 │   ├── prepare/
 │   │   └── prepare.example.yaml
 │   └── train/
 │       └── nvidia.example.yaml
 ├── core/
+│   ├── bench/
 │   ├── common/
 │   ├── datasets/
 │   ├── onnx/
 │   └── training/
 ├── docs/
 │   ├── ARCHITECTURE.md
+│   ├── BENCH.md
 │   ├── CLI.md
 │   ├── DATASETS.md
 │   ├── ONNX.md
@@ -123,7 +133,8 @@ Demo download scripts:
 │   ├── prepare_yolo_dataset.py
 │   ├── print_yolo_dataset_stats.py
 │   ├── report_ap.py
-│   └── train.py
+│   ├── train.py
+│   └── yolo_bench_report.py
 └── pyproject.toml
 ```
 
@@ -166,6 +177,7 @@ yolo-report-ap --help
 yolo-onnx-export --help
 yolo-onnx-optimize --help
 yolo-onnx-pipeline --help
+yolo-benchmark-report --help
 ```
 
 <table>

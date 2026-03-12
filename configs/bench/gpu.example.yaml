@@ -1,0 +1,117 @@
+# Example benchmark config for GPU latency/FPS profiling.
+# Copy this file to a local config and override only the paths and hardware points
+# that are specific to your machine.
+#
+# Usage:
+#   yolo-benchmark-report --config configs/bench/gpu.example.yaml
+#
+# Core idea:
+# - dataset.source is the default benchmark source for both speed and quality
+# - keep it on a holdout split such as test for honest benchmark numbers
+# - dataset.speed and dataset.quality are optional override blocks, not required sections
+# - if you do nothing else, both speed and quality use dataset.source
+# - use an override only when you intentionally want a different split or direct paths
+
+hardware:
+  # Hardware kind used by the benchmark worker.
+  # For this example the speed path runs on GPU.
+  kind: gpu
+
+  # Device string used by the quality evaluation path.
+  # PyTorch uses this directly; ONNX Runtime selects CUDAExecutionProvider automatically.
+  device: cuda:0
+
+  # Each point becomes one point on the latency/FPS charts.
+  # pre_cmd/post_cmd are optional hooks for machine-specific GPU tuning.
+  points:
+    - label: gpu default
+    - label: gpu tuned
+      # pre_cmd: sudo nvidia-smi -pm 1
+      # post_cmd: true
+
+imgsz:
+  # Example rectangular input for production-like requests.
+  # Use square when your serving stack always resizes to NxN.
+  mode: rect
+
+  # Used when mode=rect.
+  value: [640, 640]
+
+  # Letterbox stride used by the benchmark preprocessor.
+  stride: 32
+
+  # Used only by the quality path when mode=dynamic.
+  val_imgsz_fallback: 640
+
+# Model path. Backend is inferred from the file suffix:
+#   .pt   -> Ultralytics / PyTorch
+#   .onnx -> ONNX Runtime
+model: runs/train/fashionpedia_gpu_example/weights/best.onnx
+
+dataset:
+  # Default benchmark source.
+  # In the common case this is all you need: both speed and quality will use this holdout split.
+  source:
+    data_yaml: data/converted/fashionpedia_pipeline_test/fashionpedia_pipeline_test.yaml
+    split: test
+
+  # Optional speed override.
+  # Use this only when speed must run on another split or on a plain image directory.
+  # speed:
+  #   images_dir: data/converted/fashionpedia_pipeline_test/images/test
+
+  # Optional quality override.
+  # Use this only when quality must be evaluated on another labeled split.
+  # If omitted, quality also inherits dataset.source.
+  # If you define dataset.quality with data_yaml but omit split, the default is test.
+  # quality:
+  #   split: val
+  #
+  #   Full-source override example:
+  #   images_dir: data/converted/fashionpedia_pipeline_test/images/val
+  #   annotations_dir: data/converted/fashionpedia_pipeline_test/labels/val
+
+benchmark:
+  # Batch size used by the speed path.
+  # For latency-focused comparisons keep this at 1.
+  batch: 1
+
+  # Number of warmup forward passes on one image before timing starts.
+  warmup_iters: 16
+
+  # Maximum number of sampled images per hardware point.
+  # 0 means use every image from the selected speed source.
+  max_images: 512
+
+  # Shuffle the selected speed source before capping with max_images.
+  shuffle: true
+
+  # Seed used for deterministic sampling when shuffle=true.
+  seed: 42
+
+  # For PyTorch on CUDA this may improve latency/throughput.
+  # It is ignored by the ONNX Runtime path.
+  half: true
+
+quality:
+  # Batch size used by the quality evaluation path.
+  batch: 1
+
+  # Whether to export COCO-style JSON during validation when supported.
+  save_json: false
+
+  # Whether to let Ultralytics render its own validation plots.
+  plots: false
+
+output:
+  # Output directory for the final benchmark PNG, JSON, CSV, and optional quality artifacts.
+  dir: runs/bench/gpu_example
+
+  # Final one-page PNG benchmark report.
+  report_png: benchmark_report.gpu.png
+
+  # Machine-readable JSON summary.
+  report_json: benchmark_report.gpu.json
+
+  # CSV table with latency/FPS per hardware point.
+  speed_csv: benchmark_speed.gpu.csv

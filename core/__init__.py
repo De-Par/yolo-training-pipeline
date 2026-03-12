@@ -1,1 +1,1 @@
-__all__ = ["common", "datasets", "onnx", "training"]
+__all__ = ["bench", "common", "datasets", "onnx", "training"]

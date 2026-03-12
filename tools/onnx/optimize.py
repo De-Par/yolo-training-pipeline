@@ -5,9 +5,13 @@ import argparse
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+TOOLS_DIR = Path(__file__).resolve().parents[1]
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
+from _runtime import bootstrap_project_root
+
+bootstrap_project_root(__file__, levels=2)
 
 from core.common import format_info, run_cli_with_progress
 from core.onnx.common import parse_hw

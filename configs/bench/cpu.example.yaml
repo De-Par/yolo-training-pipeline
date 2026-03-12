@@ -1,0 +1,145 @@
+# Example benchmark config for CPU latency/FPS profiling.
+# Copy this file to a local config and override only the paths and hardware points
+# that are specific to your machine.
+#
+# Usage:
+#   yolo-benchmark-report --config configs/bench/cpu.example.yaml
+#
+# Core idea:
+# - dataset.source is the default benchmark source for both speed and quality
+# - keep it on a holdout split such as test for honest benchmark numbers
+# - dataset.speed and dataset.quality are optional override blocks, not required sections
+# - if you do nothing else, both speed and quality use dataset.source
+# - use an override only when you intentionally want a different split or direct paths
+
+hardware:
+  # Hardware kind used by the benchmark worker.
+  # Supported values:
+  #   cpu -> use PyTorch CPU or ONNX Runtime CPUExecutionProvider
+  #   gpu -> use CUDA path instead
+  kind: cpu
+
+  # Device string used by the quality evaluation path.
+  # For a CPU benchmark keep this fixed at cpu.
+  device: cpu
+
+  # Each point becomes one point on the latency/FPS charts.
+  # For CPU, the usual pattern is to vary the visible cores and the number of torch/ORT threads.
+  # Use labels that are meaningful in the final report.
+  points:
+    - label: 1 core
+      # CPU ids pinned for this point.
+      # You can mix explicit ids and inclusive ranges, for example: ["0-3", 6].
+      cores: [0]
+      # Inference threads used inside the backend for this point.
+      threads: 1
+    - label: 2 cores
+      cores: [0, 1]
+      threads: 2
+    - label: 4 cores
+      cores: ["0-3"]
+      threads: 4
+
+imgsz:
+  # Input sizing mode used by the benchmark preprocessor.
+  # square  -> force N x N input for every image
+  # rect    -> force H x W input for every image
+  # dynamic -> preserve aspect ratio and pad each image to stride
+  mode: square
+
+  # Used when mode=square or mode=rect.
+  # square: positive integer
+  # rect: [H, W]
+  value: 640
+
+  # Letterbox stride used by the benchmark preprocessor.
+  # Keep this aligned with the model/export expectations.
+  stride: 32
+
+  # Used only by the quality path when mode=dynamic.
+  # Ultralytics val still requires one numeric imgsz fallback.
+  val_imgsz_fallback: 640
+
+# Model path. Backend is inferred from the file suffix:
+#   .pt   -> Ultralytics / PyTorch
+#   .onnx -> ONNX Runtime
+model: runs/train/fashionpedia_cpu_example/weights/best.pt
+
+dataset:
+  # Default benchmark source.
+  # In the common case this is all you need: both speed and quality will use this holdout split.
+  source:
+    data_yaml: data/converted/fashionpedia_pipeline_test/fashionpedia_pipeline_test.yaml
+    split: test
+
+  # Optional speed override.
+  # Use this only when latency/FPS should run on another split or on a plain image directory.
+  # If omitted, speed inherits dataset.source.
+  # speed:
+  #   split: test
+  #   images_dir: data/converted/fashionpedia_pipeline_test/images/test
+
+  # Optional quality override.
+  # Use this only when quality must be evaluated on another labeled split.
+  # If omitted, quality also inherits dataset.source.
+  # If you define dataset.quality with data_yaml but omit split, the default is test.
+  # quality:
+  #   split: val
+  #
+  #   Full-source override example:
+  #   images_dir: data/converted/fashionpedia_pipeline_test/images/val
+  #   annotations_dir: data/converted/fashionpedia_pipeline_test/labels/val
+
+  # Shared class-name fallback for direct-path quality mode.
+  # Usually unnecessary when quality uses a dataset YAML with names already defined.
+  # class_names_file: data/converted/fashionpedia_pipeline_test/classes.txt
+
+benchmark:
+  # Batch size used by the speed path.
+  # For operator-style latency comparisons keep this at 1.
+  batch: 1
+
+  # Number of warmup forward passes on one image before timing starts.
+  # This removes one-time initialization overhead from the measured numbers.
+  warmup_iters: 8
+
+  # Maximum number of sampled images per hardware point.
+  # 0 means use every image from the selected speed source.
+  max_images: 256
+
+  # Shuffle the selected speed source before capping with max_images.
+  # Keep true unless you deliberately want the first N images only.
+  shuffle: true
+
+  # Seed used for deterministic sampling when shuffle=true.
+  seed: 42
+
+  # Only meaningful for PyTorch on CUDA.
+  # Keep false on CPU runs.
+  half: false
+
+quality:
+  # Batch size used by the quality evaluation path.
+  # Keep it small and stable for reproducible holdout metrics.
+  batch: 1
+
+  # Whether to export COCO-style JSON during validation when supported.
+  # Turn this on only when you explicitly need external evaluation artifacts.
+  save_json: false
+
+  # Whether to let Ultralytics render its own validation plots.
+  # Turn this on only when you want the extra validation images/plots directory.
+  plots: false
+
+output:
+  # Output directory for the final benchmark PNG, JSON, CSV, and optional quality artifacts.
+  dir: runs/bench/cpu_example
+
+  # Final one-page PNG benchmark report.
+  report_png: benchmark_report.cpu.png
+
+  # Machine-readable JSON summary.
+  report_json: benchmark_report.cpu.json
+
+  # CSV table with latency/FPS per hardware point.
+  speed_csv: benchmark_speed.cpu.csv

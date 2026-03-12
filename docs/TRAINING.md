@@ -1,7 +1,7 @@
 # Training Guide
 
 **Navigation**
-[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
+[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`Bench`](BENCH.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
 
 This guide covers the training side of the pipeline.
 
@@ -13,6 +13,7 @@ This guide covers the training side of the pipeline.
 - [Config Plus Override Pattern](#config-plus-override-pattern)
 - [Training Outputs](#training-outputs)
 - [Per-Class AP Analysis](#per-class-ap-analysis)
+- [Benchmarking](#benchmarking)
 - [Val Versus Test](#val-versus-test)
 - [Practical Advice](#practical-advice)
 - [Common Failure Modes](#common-failure-modes)
@@ -117,6 +118,16 @@ This is especially useful when:
 - the dataset has a long tail
 - aggregate mAP hides dead classes
 - you need evidence for future recipe changes in `yolo-prepare-dataset`
+
+## Benchmarking
+
+Use [`Bench Guide`](BENCH.md) when you need:
+
+- latency and FPS vs hardware points
+- a one-page PNG report for a trained checkpoint
+- benchmark runs on a holdout split such as `test`
+
+Benchmarking belongs after training and before deployment tuning. It is separate from `yolo-report-ap`, which is focused only on validation/export of AP metrics.
 
 ## Val Versus Test
 

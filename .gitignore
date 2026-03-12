@@ -55,3 +55,5 @@ configs/train/*
 !configs/train/*.example.yaml
 configs/prepare/*
 !configs/prepare/*.example.yaml
+configs/bench/*
+!configs/bench/*.example.yaml

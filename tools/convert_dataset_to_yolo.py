@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+from _runtime import bootstrap_project_root
+
+bootstrap_project_root(__file__, levels=1)
 
 from core.common import run_cli_with_progress, stdout_logger
 from core.datasets.convert_dataset_to_yolo import ConvertDatasetOptions, convert_dataset_to_yolo, supported_input_formats

@@ -43,6 +43,7 @@ yolo-report-ap = "tools.report_ap:main"
 yolo-onnx-export = "tools.onnx.export:main"
 yolo-onnx-optimize = "tools.onnx.optimize:main"
 yolo-onnx-pipeline = "tools.onnx.pipeline:main"
+yolo-benchmark-report = "tools.yolo_bench_report:main"
 
 
 [tool.setuptools]

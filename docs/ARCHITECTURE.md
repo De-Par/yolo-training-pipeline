@@ -1,7 +1,7 @@
 # Architecture
 
 **Navigation**
-[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
+[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`Bench`](BENCH.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
 
 The project is structured around a strict separation between library code and CLI code.
 
@@ -29,6 +29,17 @@ The project is structured around a strict separation between library code and CL
 - `docs/` contains user-facing documentation
 
 ## `core/`
+
+### `core/bench/`
+
+Benchmark-side business logic.
+
+Current responsibilities:
+
+- benchmark config validation
+- dataset source resolution for speed and quality runs
+- backend latency measurement for `.pt` and `.onnx` models
+- PNG, JSON, and CSV benchmark report generation
 
 ### `core/common/`
 
@@ -99,7 +110,7 @@ Responsibilities:
 
 Subareas:
 
-- top-level `tools/*.py` for dataset and training commands
+- top-level `tools/*.py` for dataset, training, and benchmark commands
 - `tools/onnx/*.py` for ONNX export and optimization commands
 
 Non-responsibilities:
@@ -132,6 +143,7 @@ Do not put pipeline-critical business logic there.
 6. ONNX export and optimization are post-training deployment stages.
 7. `tools/` should stay replaceable without rewriting `core/`.
 8. New raw schemas should extend `convert_dataset_to_yolo`, not create parallel pipelines.
+9. Benchmarking stays post-training and should measure holdout splits by default.
 
 ## Packaging
 
@@ -145,8 +157,9 @@ Public console scripts are defined in [`../pyproject.toml`](../pyproject.toml):
 - `yolo-onnx-export`
 - `yolo-onnx-optimize`
 - `yolo-onnx-pipeline`
+- `yolo-benchmark-report`
 
 ---
 
 **Next**
-[`Home`](../README.md) · [`CLI Reference`](CLI.md) · [`Dataset Guide`](DATASETS.md) · [`ONNX Guide`](ONNX.md)
+[`Home`](../README.md) · [`CLI Reference`](CLI.md) · [`Dataset Guide`](DATASETS.md) · [`Bench Guide`](BENCH.md) · [`ONNX Guide`](ONNX.md)

@@ -1,7 +1,7 @@
 # CLI Reference
 
 **Navigation**
-[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
+[`Home`](../README.md) · [`Datasets`](DATASETS.md) · [`Training`](TRAINING.md) · [`Bench`](BENCH.md) · [`ONNX`](ONNX.md) · [`CLI`](CLI.md) · [`Architecture`](ARCHITECTURE.md)
 
 This document describes the current public CLI surface.
 
@@ -16,6 +16,7 @@ This document describes the current public CLI surface.
 - [`yolo-onnx-export`](#yolo-onnx-export)
 - [`yolo-onnx-optimize`](#yolo-onnx-optimize)
 - [`yolo-onnx-pipeline`](#yolo-onnx-pipeline)
+- [`yolo-benchmark-report`](#yolo-benchmark-report)
 - [Fallback Entry Points](#fallback-entry-points)
 
 <table>
@@ -36,6 +37,7 @@ This document describes the current public CLI surface.
 | `yolo-onnx-export` | Export a YOLO checkpoint to ONNX |
 | `yolo-onnx-optimize` | Optimize an ONNX model for CPU or CUDA deployment |
 | `yolo-onnx-pipeline` | Export and optimize in one command |
+| `yolo-benchmark-report` | Measure backend latency and quality on a benchmark split and render a PNG report |
 
 ## `yolo-convert-dataset`
 
@@ -94,6 +96,31 @@ yolo-convert-dataset \
 `yolo-prepare-dataset` recipe note:
 
 - Combined resplit modes always rename moved image/label pairs to stable unique hash-based names.
+
+## `yolo-benchmark-report`
+
+Measure inference latency/FPS across configured hardware points and render a single PNG report with speed, dataset sizing summary, and quality metrics. By default both use one benchmark source; optional overrides let you split them deliberately. Quality artifacts are written only when `quality.plots` or `quality.save_json` is enabled.
+
+### Syntax
+
+```bash
+yolo-benchmark-report --config configs/bench/cpu.example.yaml
+```
+
+### Config highlights
+
+- `hardware.kind`: `cpu` or `gpu`
+- `hardware.points`: speed points for the latency/FPS plot; CPU `cores` may use ids or ranges like `["0-7", 10]`
+- `imgsz.mode`: `square`, `rect`, or `dynamic`
+- `model`: backend is inferred from `.pt` or `.onnx`
+- `dataset.source`: default benchmark source, usually a holdout split such as `test`
+- `dataset.speed`: optional speed override via another split or direct `images_dir`
+- `dataset.quality`: optional labeled quality override via another split or direct `images_dir + annotations_dir` (defaults to `test` when it inherits a dataset YAML source and no split is given)
+- by default both speed and quality inherit `dataset.source`; override only when you intentionally want another source
+- `benchmark.batch`: usually `1` for apples-to-apples latency measurements
+- `benchmark.warmup_iters`: warm up on one image before timing starts
+- `benchmark.max_images`: cap the number of timed images per hardware point
+- `output.report_png`: final report path
 
 ## `yolo-print-stats`
 
