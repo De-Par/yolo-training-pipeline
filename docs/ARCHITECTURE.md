@@ -24,6 +24,7 @@ The project is structured around a strict separation between library code and CL
 
 - `core/` contains domain logic
 - `tools/` contains argument parsing and user-facing CLI behavior
+- `app/` contains interactive demo applications
 - `scripts/` contains shell automation and demo flows
 - `configs/` contains tracked example YAMLs
 - `docs/` contains user-facing documentation
@@ -97,6 +98,16 @@ Design intent:
 - `optimizer` is ONNX-to-runtime-artifacts only
 - `pipeline` composes both when a one-shot flow is useful
 
+## `app/`
+
+`app/` contains interactive demo applications that are useful for manual inspection but are not part of the main pipeline stages.
+
+Current responsibilities:
+
+- interactive ONNX image viewer
+- keyboard-driven manual inspection over one image or a directory
+- terminal-side logging for image parameters, detections, and inference time
+
 ## `tools/`
 
 `tools/` is the CLI layer only.
@@ -157,6 +168,7 @@ Public console scripts are defined in [`../pyproject.toml`](../pyproject.toml):
 - `yolo-onnx-export`
 - `yolo-onnx-optimize`
 - `yolo-onnx-pipeline`
+- `yolo-onnx-demo`
 - `yolo-benchmark-report`
 
 ---

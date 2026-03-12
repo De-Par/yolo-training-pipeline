@@ -53,6 +53,7 @@ Deployment branch
 | run and tune training | [Training Guide](docs/TRAINING.md) |
 | benchmark latency, FPS, and holdout quality | [Bench Guide](docs/BENCH.md) |
 | export and optimize ONNX artifacts | [ONNX Guide](docs/ONNX.md) |
+| run the interactive ONNX image demo | [ONNX Guide](docs/ONNX.md#interactive-demo) |
 | see exact commands and flags | [CLI Reference](docs/CLI.md) |
 | understand code layout | [Architecture](docs/ARCHITECTURE.md) |
 | inspect the tracked train config example | [`configs/train/nvidia.example.yaml`](configs/train/nvidia.example.yaml) |
@@ -73,6 +74,7 @@ Installable commands from [`pyproject.toml`](pyproject.toml):
 | `yolo-onnx-export` | Export a YOLO `.pt` checkpoint to ONNX |
 | `yolo-onnx-optimize` | Optimize an ONNX model for CPU or CUDA runtime |
 | `yolo-onnx-pipeline` | Export and optimize in one command |
+| `yolo-onnx-demo` | Open an interactive ONNX image viewer with bbox overlay |
 | `yolo-benchmark-report` | Measure inference speed vs hardware points and render a PNG quality/speed report |
 
 The benchmark config uses `dataset.source` as the default benchmark source, usually `test`. Optional `dataset.speed` and `dataset.quality` blocks override that source only when you explicitly need different splits or direct image/label paths. If `dataset.quality` uses a dataset YAML and does not set `split`, it also defaults to `test`.
@@ -101,6 +103,9 @@ Demo download scripts:
 
 ```text
 .
+├── app/
+│   ├── __init__.py
+│   └── onnx_demo.py
 ├── configs/
 │   ├── bench/
 │   │   ├── cpu.example.yaml
@@ -177,6 +182,7 @@ yolo-report-ap --help
 yolo-onnx-export --help
 yolo-onnx-optimize --help
 yolo-onnx-pipeline --help
+yolo-onnx-demo --help
 yolo-benchmark-report --help
 ```
 

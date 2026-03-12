@@ -16,6 +16,7 @@ This document describes the current public CLI surface.
 - [`yolo-onnx-export`](#yolo-onnx-export)
 - [`yolo-onnx-optimize`](#yolo-onnx-optimize)
 - [`yolo-onnx-pipeline`](#yolo-onnx-pipeline)
+- [`yolo-onnx-demo`](#yolo-onnx-demo)
 - [`yolo-benchmark-report`](#yolo-benchmark-report)
 - [Fallback Entry Points](#fallback-entry-points)
 
@@ -37,6 +38,7 @@ This document describes the current public CLI surface.
 | `yolo-onnx-export` | Export a YOLO checkpoint to ONNX |
 | `yolo-onnx-optimize` | Optimize an ONNX model for CPU or CUDA deployment |
 | `yolo-onnx-pipeline` | Export and optimize in one command |
+| `yolo-onnx-demo` | Open an interactive ONNX image viewer with bbox overlay |
 | `yolo-benchmark-report` | Measure backend latency and quality on a benchmark split and render a PNG report |
 
 ## `yolo-convert-dataset`
@@ -121,6 +123,37 @@ yolo-benchmark-report --config configs/bench/cpu.example.yaml
 - `benchmark.warmup_iters`: warm up on one image before timing starts
 - `benchmark.max_images`: cap the number of timed images per hardware point
 - `output.report_png`: final report path
+
+## `yolo-onnx-demo`
+
+Open an interactive ONNX image viewer for one image or a whole directory.
+
+### Syntax
+
+```bash
+yolo-onnx-demo \
+  --model deploy/onnx/model.optimize.cpu.extended.fp32.onnx \
+  --source data/raw/fashionpedia/val/images
+```
+
+### Important arguments
+
+| Option | Required | Description |
+|---|:---:|---|
+| `--model` | yes | path to the ONNX model |
+| `--source` | yes | one image file or a directory with images |
+| `--device` | no | `cpu` or `cuda` |
+| `--class-names-file` | no | optional class name file used for labels |
+| `--imgsz` | no | input size override as `N` or `H W` |
+| `--conf` | no | confidence threshold |
+| `--iou` | no | NMS IoU threshold |
+| `--max-det` | no | maximum detections after NMS |
+
+Controls:
+
+- `W`: next image
+- `S`: previous image
+- `Q` or `Esc`: quit
 
 ## `yolo-print-stats`
 

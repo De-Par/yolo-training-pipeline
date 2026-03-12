@@ -13,6 +13,7 @@ This guide covers ONNX export, runtime-specific optimization, and deployment-pre
 - [Stage 2: Optimize for Runtime](#stage-2-optimize-for-runtime)
 - [One-Shot Pipeline](#one-shot-pipeline)
 - [Artifact Naming](#artifact-naming)
+- [Interactive Demo](#interactive-demo)
 - [Deployment Notes](#deployment-notes)
 
 <table>
@@ -157,6 +158,37 @@ Typical examples:
 - `model.optimize.cpu.extended.int8.onnx`
 
 Keep deployment artifacts outside `runs/` so they do not mix with training outputs.
+
+## Interactive Demo
+
+Use the interactive viewer when you want a quick manual inspection loop over one image or a folder of images:
+
+```bash
+yolo-onnx-demo \
+  --model deploy/onnx/model.optimize.cpu.extended.fp32.onnx \
+  --source data/raw/fashionpedia/val/images
+```
+
+It supports:
+
+- one image or a whole image directory
+- OpenCV window with bbox overlay
+- terminal logs for image size, input size, detection count, and inference time
+- keyboard navigation:
+  - `W`: next image
+  - `S`: previous image
+  - `Q` or `Esc`: quit
+
+Optional arguments:
+
+- `--device cpu|cuda`
+- `--class-names-file path/to/classes.txt`
+- `--imgsz 640` or `--imgsz 640 640`
+- `--conf 0.25`
+- `--iou 0.45`
+- `--max-det 300`
+
+This demo targets ordinary detect ONNX models exported from the current YOLO pipeline.
 
 ## Deployment Notes
 
