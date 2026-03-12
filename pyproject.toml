@@ -43,6 +43,7 @@ yolo-report-ap = "tools.report_ap:main"
 yolo-onnx-export = "tools.onnx.export:main"
 yolo-onnx-optimize = "tools.onnx.optimize:main"
 yolo-onnx-pipeline = "tools.onnx.pipeline:main"
+yolo-onnx-demo = "app.onnx_demo:main"
 yolo-benchmark-report = "tools.yolo_bench_report:main"
 
 
@@ -51,5 +52,5 @@ include-package-data = false
 
 
 [tool.setuptools.packages.find]
-include = ["core*", "tools*"]
+include = ["app*", "core*", "tools*"]
 exclude = ["data*", "models*", "reports*", "runs*", "configs*", "scripts*"]
