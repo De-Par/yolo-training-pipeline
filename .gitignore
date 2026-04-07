@@ -2,7 +2,9 @@
 data/
 models/
 runs/
+reports/
 deploy/
+*.pt
 
 # Logs and reports
 *.log
@@ -48,12 +50,12 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Optional local config overrides
+# Optional Python local config overrides
 .env
 .env.*
-configs/train/*
-!configs/train/*.example.yaml
-configs/prepare/*
+
+# User local configs
+configs/**/*.yaml
 !configs/prepare/*.example.yaml
-configs/bench/*
+!configs/train/*.example.yaml
 !configs/bench/*.example.yaml
