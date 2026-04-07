@@ -1,1 +1,1 @@
-"""Interactive demo apps for the YOLO pipeline."""
+"""Interactive demo apps for the YOLO pipeline"""
