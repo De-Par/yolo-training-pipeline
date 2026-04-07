@@ -1,89 +1,229 @@
-# Optional in-place preparation recipe for a YOLO-styled dataset.
-# Treat this file as a starting point. Copy it to a local recipe and override
-# split rules, class surgery, and output naming for your own dataset.
-# Usage:
-#   yolo-prepare-dataset --dataset-dir path/to/dataset_dir --recipe configs/prepare/prepare.example.yaml
+# ==================================================================================
+# Optional in-place preparation recipe for a YOLO-style dataset.
+# Apply it with:
+#   yolo-prepare-dataset --dataset-dir data/converted/my_dataset --recipe configs/prepare/prepare.example.yaml
 #
-# This example is intentionally no-op by default and will be rejected until you
-# request a real change. Inspect the dataset first:
-#   yolo-print-stats --dataset-dir path/to/dataset_dir
+# Important:
+# - Preparation mutates the dataset directory in place.
+# - A recipe that does not request any real change is rejected.
+# - Inspect the dataset first:
+#   yolo-print-stats --dataset-dir data/converted/my_dataset
+#
+# Actual preparation order:
+#
+# Field                               Works on
+# ----------------------------------  ---------------------------------------------
+# classes.keep                        ORIGINAL classes
+# classes.drop                        ORIGINAL classes
+# classes.remap                       ORIGINAL classes -> builds NEW classes
+# empty_policy                        TRANSFORMED labels / NEW dataset state
+# split.mode                          NEW dataset
+# split.seed                          NEW dataset
+# split.train_fraction                NEW dataset
+# split.val_fraction                  NEW dataset
+# split.test_fraction                 NEW dataset
+# split.min_val_instances_per_class   NEW classes
+# split.min_test_instances_per_class  NEW classes
+# split.per_class_min_val_instances   NEW classes
+# split.per_class_min_test_instances  NEW classes
+#
+# This means:
+# - combined resplit modes operate on already transformed labels
+# - split instance constraints are checked on final classes, not original ones
+# ==================================================================================
 
-# Optional dataset name written into the regenerated data.yaml file.
-# If omitted, the current dataset directory name is reused.
-# dataset_name: prepared_dataset_name
 
-# Policy for images that become empty after class dropping/remapping:
-# - drop: remove empty image + label file
-# - keep: keep image and leave an empty label file
+# ==================================================================================
+# Optional dataset name for the regenerated data.yaml file.
+# If omitted, the current dataset directory name is used.
+# ==================================================================================
+# dataset_name: my_dataset_prepared
+
+
+# ==================================================================================
+# Policy for images that become empty after class filtering/remapping:
+# - drop: remove the image file and its label file
+# - keep: keep the image and leave an empty label file
+#
+# Typical choice for pure object detection training: drop
+# ==================================================================================
 empty_policy: drop
 
+
+classes:
+  # ==================================================================================
+  # Optional selectors of original classes to keep.
+  # If omitted or empty, all original classes are considered kept.
+  #
+  # Supported selector forms:
+  # - exact class name
+  # - class id
+  # - id range
+  # ==================================================================================
+  keep: []
+
+
+  # ==================================================================================
+  # Optional selectors of original classes to drop.
+  #
+  # Applied before remap resolution is finalized.
+  # If a class is dropped, it cannot be referenced by remap rules.
+  # ==================================================================================
+  drop: []
+
+
+  # ==================================================================================
+  # Remap original classes into final classes.
+  #
+  # Each rule:
+  # - defines a final class name in 'name'
+  # - collects one or more original source classes in 'from'
+  #
+  # A rule with one source class works like a rename.
+  # A rule with multiple source classes merges them into one final class.
+  #
+  # Supported selector forms in 'from':
+  # - exact class name
+  # - class id
+  # - id range
+  #
+  # Validation rules:
+  # - each remap rule must have a non-empty 'name'
+  # - each remap rule must resolve to at least one original class
+  # - the same original class cannot appear in multiple remap rules
+  # - dropped classes cannot be referenced here
+  #
+  # Final class ids are assigned automatically in sorted original-id order
+  # of the kept classes after remapping.
+  # ==================================================================================
+  remap: []
+
+  # ==================================================================================
+  # Examples:
+  #
+  # remap:
+  #   - name: footwear
+  #     from: [23]
+  #
+  #   - name: outerwear
+  #     from: ["coat", "jacket"]
+  #
+  #   - name: tops
+  #     from: ["shirt, blouse", "top, t-shirt, sweatshirt", 2, 3]
+  #
+  #   - name: clothing_parts
+  #     from: ["30-35"]
+  # ==================================================================================
+
+  # WARNING
+  # ==================================================================================
+  # Recipe must request at least one real mutation.
+  # Examples of valid changes:
+  # - set split.mode to sample_existing or a combined resplit mode
+  # - change split fractions from defaults
+  # - set split instance constraints
+  # - set classes.keep
+  # - set classes.drop
+  # - set classes.remap
+  # - set dataset_name to a different output dataset name
+  # ==================================================================================
+
+
 split:
+  # ==================================================================================
   # Split modes:
-  # - keep_existing: keep current train/val/(test) boundaries as-is
-  # - sample_existing: downsample current splits independently
-  # - resplit_combined_random: merge current splits and resplit by image fractions
-  # - resplit_combined_by_instances: merge current splits and satisfy val/test
-  #   instance targets before filling nominal fractions
+  #
+  # - keep_existing
+  #   Keep current train / val / (test) split boundaries as-is.
+  #   Only class filtering/remapping is applied.
+  #
+  # - sample_existing
+  #   Downsample each existing split independently.
+  #   Fractions are per-split keep rates.
+  #
+  # - resplit_combined_random
+  #   Merge all current splits into one pool and resplit randomly
+  #   according to target fractions.
+  #
+  # - resplit_combined_by_instances
+  #   Merge all current splits into one pool and resplit while trying
+  #   to satisfy minimum instance targets for val/test first, then fill
+  #   the remaining images to target split sizes.
+  #
+  # Notes:
+  # - train and val must exist before preparation starts
+  # - test is optional
+  # ==================================================================================
   mode: keep_existing
 
-  # Combined resplit modes always rename moved image/label pairs to stable
-  # unique hash-based names. This avoids filename and label-stem collisions
-  # when train/val/test are merged and rebuilt.
 
-  # Random seed used by sample_existing and combined resplit modes.
+  # ==================================================================================
+  # Random seed used by:
+  # - sample_existing
+  # - resplit_combined_random
+  # - resplit_combined_by_instances
+  # ==================================================================================
   seed: 42
 
+
+  # ==================================================================================
+  # Fraction semantics depend on the mode.
+  #
   # For sample_existing:
-  # - fractions are per-split keep rates
+  # - train_fraction = keep rate inside existing train
+  # - val_fraction   = keep rate inside existing val
+  # - test_fraction  = keep rate inside existing test
   #
   # For combined resplit modes:
-  # - fractions are target split sizes across the combined pool
-  # - train_fraction + val_fraction + test_fraction must sum to 1.0
+  # - fractions define target sizes in the merged image pool
+  # - train_fraction + val_fraction + test_fraction must be exactly 1.0
+  # - train_fraction > 0 and val_fraction > 0 are required
+  #
+  # For keep_existing:
+  # - fractions are effectively ignored
+  # ==================================================================================
   train_fraction: 1.0
   val_fraction: 1.0
   test_fraction: 0.0
 
-  # Optional constraints for resplit_combined_by_instances.
-  # These request a minimum number of instances in val/test per class.
+
+  # ==================================================================================
+  # Optional default minimum instance constraints for
+  # resplit_combined_by_instances only.
+  #
+  # These request at least N object instances of every present final class
+  # in the corresponding split.
+  #
+  # Important:
+  # - these constraints are evaluated after classes.keep / classes.drop / classes.remap
+  # - they refer to final class ids / names after transformation
+  # - classes with zero remaining instances are ignored
+  # ==================================================================================
   min_val_instances_per_class: 0
   min_test_instances_per_class: 0
 
-  # Optional per-class overrides for resplit_combined_by_instances.
-  # Selector forms:
-  # - exact class names, for example: "class name"
-  # - class ids, for example: 23
-  # - id ranges, for example: "30-35"
-  # Compact YAML flow-style is supported, for example:
-  # per_class_min_val_instances: {23: 80, "class name": 60, "30-35": 10}
+
+  # ==================================================================================
+  # Optional per-class overrides for resplit_combined_by_instances only.
+  #
+  # These override or strengthen the default minima above for selected final classes.
+  #
+  # Supported selector forms:
+  # - exact class name, for example: "shirt, blouse"
+  # - class id, for example: "23"
+  # - id range, for example: "30-35"
+  #
+  # Important:
+  # - selectors are resolved against FINAL classes after keep/drop/remap
+  # - if you merge old classes into a new class name, use that new name here
+  #
+  # Example:
+  # per_class_min_val_instances:
+  #   tops: 150
+  #   footwear: 80
+  #
+  # Compact flow-style is also supported:
+  # per_class_min_val_instances: {tops: 150, footwear: 80}
   per_class_min_val_instances: {}
   per_class_min_test_instances: {}
-
-classes:
-  # Optional selectors to keep before remapping. If omitted, all classes are kept.
-  keep: []
-
-  # Optional selectors to remove before remapping.
-  drop: []
-
-  # Remap and merge old classes into new class names.
-  # A rule with one source class acts like a rename.
-  # 'from' accepts the same selector forms as keep/drop.
-  remap: []
-
-  # Example:
-  # remap:
-  #   - name: merged_class_a
-  #     from: [0]
-  #   - name: merged_class_b
-  #     from: ["class one", "class two"]
-  #   - name: merged_class_c
-  #     from: ["class name", 2, 3, "30-35"]
-
-# To make this recipe do something, change at least one of:
-# - split.mode
-# - split fractions
-# - split instance constraints
-# - classes.keep
-# - classes.drop
-# - classes.remap
-# - dataset_name
+  

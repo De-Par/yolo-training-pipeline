@@ -46,19 +46,22 @@ imgsz:
 # Model path. Backend is inferred from the file suffix:
 #   .pt   -> Ultralytics / PyTorch
 #   .onnx -> ONNX Runtime
-model: runs/train/fashionpedia_gpu_example/weights/best.onnx
+model: path/to/best.pt
+
+# YOLO task specification, i.e. 'detect', 'segment', 'classify', 'pose', 'obb'
+task: detect
 
 dataset:
   # Default benchmark source.
   # In the common case this is all you need: both speed and quality will use this holdout split.
   source:
-    data_yaml: data/converted/fashionpedia_pipeline_test/fashionpedia_pipeline_test.yaml
+    data_yaml: path/to/dataset.yaml
     split: test
 
   # Optional speed override.
   # Use this only when speed must run on another split or on a plain image directory.
   # speed:
-  #   images_dir: data/converted/fashionpedia_pipeline_test/images/test
+  #   images_dir: path/to/images/test
 
   # Optional quality override.
   # Use this only when quality must be evaluated on another labeled split.
@@ -68,8 +71,8 @@ dataset:
   #   split: val
   #
   #   Full-source override example:
-  #   images_dir: data/converted/fashionpedia_pipeline_test/images/val
-  #   annotations_dir: data/converted/fashionpedia_pipeline_test/labels/val
+  #   images_dir: path/to/images/val
+  #   annotations_dir: path/to/labels/val
 
 benchmark:
   # Batch size used by the speed path.
@@ -94,14 +97,18 @@ benchmark:
   half: true
 
 quality:
+  # Maximum number of sampled images per hardware point.
+  # 0 means use every image from the selected speed source.
+  max_images: 0
+  
   # Batch size used by the quality evaluation path.
   batch: 1
 
   # Whether to export COCO-style JSON during validation when supported.
-  save_json: false
+  save_json: true
 
   # Whether to let Ultralytics render its own validation plots.
-  plots: false
+  plots: true
 
 output:
   # Output directory for the final benchmark PNG, JSON, CSV, and optional quality artifacts.
@@ -115,3 +122,4 @@ output:
 
   # CSV table with latency/FPS per hardware point.
   speed_csv: benchmark_speed.gpu.csv
+  

@@ -63,13 +63,16 @@ imgsz:
 # Model path. Backend is inferred from the file suffix:
 #   .pt   -> Ultralytics / PyTorch
 #   .onnx -> ONNX Runtime
-model: runs/train/fashionpedia_cpu_example/weights/best.pt
+model: path/to/best.pt
+
+# YOLO task specification, i.e. 'detect', 'segment', 'classify', 'pose', 'obb'
+task: detect
 
 dataset:
   # Default benchmark source.
   # In the common case this is all you need: both speed and quality will use this holdout split.
   source:
-    data_yaml: data/converted/fashionpedia_pipeline_test/fashionpedia_pipeline_test.yaml
+    data_yaml: path/to/dataset.yaml
     split: test
 
   # Optional speed override.
@@ -77,7 +80,7 @@ dataset:
   # If omitted, speed inherits dataset.source.
   # speed:
   #   split: test
-  #   images_dir: data/converted/fashionpedia_pipeline_test/images/test
+  #   images_dir: path/to/images/test
 
   # Optional quality override.
   # Use this only when quality must be evaluated on another labeled split.
@@ -87,12 +90,12 @@ dataset:
   #   split: val
   #
   #   Full-source override example:
-  #   images_dir: data/converted/fashionpedia_pipeline_test/images/val
-  #   annotations_dir: data/converted/fashionpedia_pipeline_test/labels/val
+  #   images_dir: path/to/images/val
+  #   annotations_dir: path/to/labels/val
 
   # Shared class-name fallback for direct-path quality mode.
   # Usually unnecessary when quality uses a dataset YAML with names already defined.
-  # class_names_file: data/converted/fashionpedia_pipeline_test/classes.txt
+  # class_names_file: path/to/classes.txt
 
 benchmark:
   # Batch size used by the speed path.
@@ -119,17 +122,21 @@ benchmark:
   half: false
 
 quality:
+  # Maximum number of sampled images per hardware point.
+  # 0 means use every image from the selected speed source.
+  max_images: 0
+
   # Batch size used by the quality evaluation path.
   # Keep it small and stable for reproducible holdout metrics.
   batch: 1
 
   # Whether to export COCO-style JSON during validation when supported.
   # Turn this on only when you explicitly need external evaluation artifacts.
-  save_json: false
+  save_json: true
 
   # Whether to let Ultralytics render its own validation plots.
   # Turn this on only when you want the extra validation images/plots directory.
-  plots: false
+  plots: true
 
 output:
   # Output directory for the final benchmark PNG, JSON, CSV, and optional quality artifacts.
@@ -143,3 +150,4 @@ output:
 
   # CSV table with latency/FPS per hardware point.
   speed_csv: benchmark_speed.cpu.csv
+  
