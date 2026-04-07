@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import csv
 import json
+import numpy as np
+
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, Sequence
-
-import numpy as np
-
-from .models import DatasetStats, SpeedPointResult
-from .utils import json_safe
+from core.bench.models import DatasetStats, SpeedPointResult
+from core.bench.utils import json_safe
 
 
 def render_report(

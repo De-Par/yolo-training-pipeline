@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
+import numpy as np
 
 from pathlib import Path
 from typing import Any, Dict, List, Set
-
-import numpy as np
-
 from core.common import PipelineError, ProgressCallback, ensure_local_mplconfigdir, format_info
 from core.datasets.common import count_images, detect_dataset_splits, iter_image_files, load_class_names
 
@@ -30,6 +28,99 @@ def _list_label_files(labels_dir: Path) -> List[Path]:
     if not labels_dir.exists():
         return []
     return sorted(labels_dir.glob("*.txt"))
+
+
+def _safe_div(numerator: int | float, denominator: int | float) -> float | None:
+    if denominator == 0:
+        return None
+    return float(numerator) / float(denominator)
+
+
+def _compute_image_stats(
+    image_files: List[Path],
+    progress_callback: ProgressCallback | None = None,
+    progress_stage: str = "",
+) -> Dict[str, Any]:
+    try:
+        from PIL import Image
+    except Exception as exc:
+        raise PipelineError(
+            "Pillow is required to collect image dimension statistics.",
+            hint="Install pillow or keep plotting dependencies available.",
+        ) from exc
+
+    widths: List[int] = []
+    heights: List[int] = []
+    areas_px: List[int] = []
+    aspect_ratios: List[float] = []
+    unreadable_images = 0
+
+    total_image_files = len(image_files)
+    for index, image_path in enumerate(image_files, start=1):
+        try:
+            with Image.open(image_path) as image:
+                width, height = image.size
+            if width <= 0 or height <= 0:
+                raise ValueError(f"Invalid image size: {width}x{height}")
+        except Exception:
+            unreadable_images += 1
+            if progress_callback is not None:
+                progress_callback(progress_stage, index, total_image_files, f"{progress_stage}: {image_path.name}")
+            continue
+
+        widths.append(width)
+        heights.append(height)
+        areas_px.append(width * height)
+        aspect_ratios.append(width / height)
+
+        if progress_callback is not None:
+            progress_callback(progress_stage, index, total_image_files, f"{progress_stage}: {image_path.name}")
+
+    if not widths:
+        return {
+            "image_files": total_image_files,
+            "readable_images": 0,
+            "unreadable_images": unreadable_images,
+            "mean_width": None,
+            "median_width": None,
+            "p10_width": None,
+            "p90_width": None,
+            "mean_height": None,
+            "median_height": None,
+            "p10_height": None,
+            "p90_height": None,
+            "mean_area_px": None,
+            "median_area_px": None,
+            "mean_megapixels": None,
+            "median_megapixels": None,
+            "mean_aspect_ratio": None,
+            "median_aspect_ratio": None,
+        }
+
+    widths_np = np.asarray(widths, dtype=np.float64)
+    heights_np = np.asarray(heights, dtype=np.float64)
+    areas_np = np.asarray(areas_px, dtype=np.float64)
+    aspect_np = np.asarray(aspect_ratios, dtype=np.float64)
+
+    return {
+        "image_files": total_image_files,
+        "readable_images": int(widths_np.size),
+        "unreadable_images": unreadable_images,
+        "mean_width": float(widths_np.mean()),
+        "median_width": float(np.median(widths_np)),
+        "p10_width": float(np.percentile(widths_np, 10)),
+        "p90_width": float(np.percentile(widths_np, 90)),
+        "mean_height": float(heights_np.mean()),
+        "median_height": float(np.median(heights_np)),
+        "p10_height": float(np.percentile(heights_np, 10)),
+        "p90_height": float(np.percentile(heights_np, 90)),
+        "mean_area_px": float(areas_np.mean()),
+        "median_area_px": float(np.median(areas_np)),
+        "mean_megapixels": float(areas_np.mean() / 1_000_000.0),
+        "median_megapixels": float(np.median(areas_np) / 1_000_000.0),
+        "mean_aspect_ratio": float(aspect_np.mean()),
+        "median_aspect_ratio": float(np.median(aspect_np)),
+    }
 
 
 def compute_label_stats(
@@ -180,12 +271,21 @@ def _summarize_split(
     dataset_dir: Path,
     split: str,
     num_classes: int,
+    image_files: List[Path] | None = None,
     label_files: List[Path] | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> Dict[str, Any]:
     images_dir = dataset_dir / "images" / split
     labels_dir = dataset_dir / "labels" / split
-    image_count = count_images(images_dir)
+
+    image_paths = image_files if image_files is not None else list(iter_image_files(images_dir))
+    image_count = len(image_paths)
+    image_stats = _compute_image_stats(
+        image_paths,
+        progress_callback=progress_callback,
+        progress_stage=f"stats:images:{split}",
+    )
+
     label_paths = label_files if label_files is not None else _list_label_files(labels_dir)
     label_stats = compute_label_stats(
         labels_dir,
@@ -194,16 +294,32 @@ def _summarize_split(
         progress_callback=progress_callback,
         progress_stage=f"stats:collect:{split}",
     )
+
     label_stems = {path.stem for path in label_paths} if labels_dir.exists() else set()
-    image_stems = {path.stem for path in iter_image_files(images_dir)} if images_dir.exists() else set()
+    image_stems = {path.stem for path in image_paths} if images_dir.exists() else set()
+
+    missing_label_files = max(0, len(image_stems - label_stems))
+    orphan_label_files = max(0, len(label_stems - image_stems))
+    non_empty_label_files = max(0, label_stats["label_files"] - label_stats["empty_label_files"])
+    total_boxes = label_stats["total_boxes"]
+    active_classes = sum(1 for value in label_stats["instances"] if value > 0)
+
     return {
         "split": split,
         "image_count": image_count,
         "label_file_count": label_stats["label_files"],
+        "non_empty_label_files": non_empty_label_files,
         "empty_label_files": label_stats["empty_label_files"],
-        "missing_label_files": max(0, len(image_stems - label_stems)),
-        "orphan_label_files": max(0, len(label_stems - image_stems)),
+        "missing_label_files": missing_label_files,
+        "orphan_label_files": orphan_label_files,
+        "image_stats": image_stats,
         "label_stats": label_stats,
+        "derived": {
+            "instances_per_image": _safe_div(total_boxes, image_count),
+            "instances_per_label_file": _safe_div(total_boxes, label_stats["label_files"]),
+            "instances_per_non_empty_label_file": _safe_div(total_boxes, non_empty_label_files),
+            "active_classes": active_classes,
+        },
     }
 
 
@@ -255,6 +371,7 @@ def _collect_plot_points(
 
 
 def collect_yolo_dataset_stats(dataset_dir: Path, progress_callback: ProgressCallback | None = None) -> Dict[str, Any]:
+    print(format_info('Start collecting stats...'))
     dataset_dir = dataset_dir.resolve()
     if not dataset_dir.exists():
         raise PipelineError(
@@ -281,20 +398,35 @@ def collect_yolo_dataset_stats(dataset_dir: Path, progress_callback: ProgressCal
             f"No dataset splits found in {dataset_dir}",
             hint="Expected images/<split> and labels/<split> directories, for example train and val.",
         )
-    label_files_by_split = {split: _list_label_files(dataset_dir / "labels" / split) for split in splits}
+
+    image_files_by_split = {
+        split: list(iter_image_files(dataset_dir / "images" / split))
+        for split in splits
+    }
+    label_files_by_split = {
+        split: _list_label_files(dataset_dir / "labels" / split)
+        for split in splits
+    }
+
     if progress_callback is not None:
-        total_steps = sum(len(label_files_by_split[split]) for split in splits) * 2
+        total_steps = sum(
+            len(image_files_by_split[split]) + len(label_files_by_split[split]) * 2
+            for split in splits
+        )
         progress_callback("stats:collect:init", 0, total_steps, "stats:collect")
+
     split_summaries = {
         split: _summarize_split(
             dataset_dir,
             split,
             len(class_names),
+            image_files=image_files_by_split[split],
             label_files=label_files_by_split[split],
             progress_callback=progress_callback,
         )
         for split in splits
     }
+
     split_plot_data = {
         split: _collect_plot_points(
             dataset_dir,
@@ -305,8 +437,18 @@ def collect_yolo_dataset_stats(dataset_dir: Path, progress_callback: ProgressCal
         )
         for split in splits
     }
+
     class_rows = build_class_stats_rows(class_names, split_summaries, splits)
     class_rows_sorted = sorted(class_rows, key=lambda row: (-row["total_inst"], row["id"]))
+
+    total_images = sum(split_summaries[split]["image_count"] for split in splits)
+    total_label_files = sum(split_summaries[split]["label_file_count"] for split in splits)
+    total_non_empty_label_files = sum(split_summaries[split]["non_empty_label_files"] for split in splits)
+    total_empty_label_files = sum(split_summaries[split]["empty_label_files"] for split in splits)
+    total_missing_label_files = sum(split_summaries[split]["missing_label_files"] for split in splits)
+    total_orphan_label_files = sum(split_summaries[split]["orphan_label_files"] for split in splits)
+    total_instances = sum(split_summaries[split]["label_stats"]["total_boxes"] for split in splits)
+
     payload = {
         "dataset_dir": str(dataset_dir),
         "num_classes": len(class_names),
@@ -314,39 +456,338 @@ def collect_yolo_dataset_stats(dataset_dir: Path, progress_callback: ProgressCal
         "splits": splits,
         "class_rows": class_rows_sorted,
         "totals": {
-            "images": sum(split_summaries[split]["image_count"] for split in splits),
-            "label_files": sum(split_summaries[split]["label_file_count"] for split in splits),
-            "empty_label_files": sum(split_summaries[split]["empty_label_files"] for split in splits),
-            "instances": sum(split_summaries[split]["label_stats"]["total_boxes"] for split in splits),
+            "images": total_images,
+            "label_files": total_label_files,
+            "non_empty_label_files": total_non_empty_label_files,
+            "empty_label_files": total_empty_label_files,
+            "missing_label_files": total_missing_label_files,
+            "orphan_label_files": total_orphan_label_files,
+            "instances": total_instances,
+            "instances_per_image": _safe_div(total_instances, total_images),
+            "instances_per_label_file": _safe_div(total_instances, total_label_files),
+            "instances_per_non_empty_label_file": _safe_div(total_instances, total_non_empty_label_files),
         },
         "plot_data": split_plot_data,
     }
+
     for split in splits:
         payload[split] = split_summaries[split]
+
     return payload
 
 
 def render_dataset_summary(stats: Dict[str, Any]) -> str:
-    lines = [
-        format_info("Dataset summary"),
-        f"dataset_dir:       {stats['dataset_dir']}",
-        f"num_classes:       {stats['num_classes']}",
-        f"empty_labels:      {stats['totals']['empty_label_files']}",
-        f"instances_total:   {stats['totals']['instances']}",
+    splits: List[str] = list(stats.get("splits", []))
+    num_classes = stats.get("num_classes", 0)
+    totals = stats.get("totals", {})
+
+    def fmt_int(value: Any) -> str:
+        if value is None:
+            return "n/a"
+        return f"{int(value):,}"
+
+    def fmt_float(value: Any, digits: int = 4) -> str:
+        if value is None:
+            return "n/a"
+        return f"{float(value):.{digits}f}"
+
+    def fmt_px_pair(width: Any, height: Any, digits: int = 1) -> str:
+        if width is None or height is None:
+            return "n/a"
+        return f"{float(width):,.{digits}f} x {float(height):,.{digits}f}"
+
+    def fmt_mp(value: Any, digits: int = 3) -> str:
+        if value is None:
+            return "n/a"
+        return f"{float(value):.{digits}f} MP"
+
+    def fmt_ratio(numerator: Any, denominator: Any) -> str:
+        if numerator is None or denominator in (None, 0):
+            return "n/a"
+        return f"{int(numerator)}/{int(denominator)}"
+
+    def fmt_bins(area_bins: Dict[str, int] | None) -> str:
+        if not area_bins:
+            return "n/a"
+        order = ("tiny", "small", "medium", "large")
+        return ", ".join(f"{key}={area_bins.get(key, 0)}" for key in order)
+
+    def sum_from_splits(path_fn) -> Any:
+        values: List[Any] = []
+        for split in splits:
+            try:
+                value = path_fn(stats[split])
+            except Exception:
+                value = None
+            if value is not None:
+                values.append(value)
+        if not values:
+            return None
+        return sum(values)
+
+    def render_table(title: str, rows: List[tuple[str, Dict[str, str]]]) -> List[str]:
+        columns = ["metric"] + splits + ["total"]
+        widths: Dict[str, int] = {column: len(column) for column in columns}
+
+        for metric, values in rows:
+            widths["metric"] = max(widths["metric"], len(metric))
+            for column in splits + ["total"]:
+                widths[column] = max(widths[column], len(values.get(column, "-")))
+
+        def render_row(metric: str, values: Dict[str, str]) -> str:
+            parts = [metric.ljust(widths["metric"])]
+            for column in splits + ["total"]:
+                parts.append(values.get(column, "-").rjust(widths[column]))
+            return "  ".join(parts)
+
+        header_values = {column: column for column in splits + ["total"]}
+        separator_values = {column: "-" * widths[column] for column in splits + ["total"]}
+
+        lines = [title, render_row("metric", header_values), render_row("-" * widths["metric"], separator_values)]
+        for metric, values in rows:
+            lines.append(render_row(metric, values))
+        return lines
+
+    active_classes_total = 0
+    for row in stats.get("class_rows", []):
+        if row.get("total_inst", 0) > 0:
+            active_classes_total += 1
+
+    files_rows: List[tuple[str, Dict[str, str]]] = [
+        (
+            "images",
+            {
+                **{split: fmt_int(stats[split].get("image_count")) for split in splits},
+                "total": fmt_int(totals.get("images")),
+            },
+        ),
+        (
+            "label_files",
+            {
+                **{split: fmt_int(stats[split].get("label_file_count")) for split in splits},
+                "total": fmt_int(totals.get("label_files")),
+            },
+        ),
+        (
+            "non_empty_label_files",
+            {
+                **{split: fmt_int(stats[split].get("non_empty_label_files")) for split in splits},
+                "total": fmt_int(totals.get("non_empty_label_files")),
+            },
+        ),
+        (
+            "empty_label_files",
+            {
+                **{split: fmt_int(stats[split].get("empty_label_files")) for split in splits},
+                "total": fmt_int(totals.get("empty_label_files")),
+            },
+        ),
+        (
+            "missing_label_files",
+            {
+                **{split: fmt_int(stats[split].get("missing_label_files")) for split in splits},
+                "total": fmt_int(totals.get("missing_label_files")),
+            },
+        ),
+        (
+            "orphan_label_files",
+            {
+                **{split: fmt_int(stats[split].get("orphan_label_files")) for split in splits},
+                "total": fmt_int(totals.get("orphan_label_files")),
+            },
+        ),
+        (
+            "readable_images",
+            {
+                **{split: fmt_int(stats[split]["image_stats"].get("readable_images")) for split in splits},
+                "total": fmt_int(sum_from_splits(lambda split_stats: split_stats["image_stats"].get("readable_images"))),
+            },
+        ),
+        (
+            "unreadable_images",
+            {
+                **{split: fmt_int(stats[split]["image_stats"].get("unreadable_images")) for split in splits},
+                "total": fmt_int(sum_from_splits(lambda split_stats: split_stats["image_stats"].get("unreadable_images"))),
+            },
+        ),
+        (
+            "instances",
+            {
+                **{split: fmt_int(stats[split]["label_stats"].get("total_boxes")) for split in splits},
+                "total": fmt_int(totals.get("instances")),
+            },
+        ),
+        (
+            "instances_per_image",
+            {
+                **{split: fmt_float(stats[split]["derived"].get("instances_per_image")) for split in splits},
+                "total": fmt_float(totals.get("instances_per_image")),
+            },
+        ),
+        (
+            "instances_per_label_file",
+            {
+                **{split: fmt_float(stats[split]["derived"].get("instances_per_label_file")) for split in splits},
+                "total": fmt_float(totals.get("instances_per_label_file")),
+            },
+        ),
+        (
+            "instances_per_non_empty",
+            {
+                **{split: fmt_float(stats[split]["derived"].get("instances_per_non_empty_label_file")) for split in splits},
+                "total": fmt_float(totals.get("instances_per_non_empty_label_file")),
+            },
+        ),
+        (
+            "active_classes",
+            {
+                **{split: fmt_ratio(stats[split]["derived"].get("active_classes"), num_classes) for split in splits},
+                "total": fmt_ratio(active_classes_total, num_classes),
+            },
+        ),
     ]
-    for split in stats["splits"]:
-        split_stats = stats[split]
-        lines.extend(
-            [
-                f"{split}_images:      {split_stats['image_count']}",
-                f"{split}_label_files: {split_stats['label_file_count']}",
-                f"{split}_missing_labels: {split_stats['missing_label_files']}",
-                f"{split}_orphan_labels:  {split_stats['orphan_label_files']}",
-                f"{split}_mean_area:   {split_stats['label_stats']['mean_area']}",
-                f"{split}_mean_xy:     ({split_stats['label_stats']['mean_x']}, {split_stats['label_stats']['mean_y']})",
-                f"{split}_area_bins:   {split_stats['label_stats']['area_bins']}",
-            ]
-        )
+
+    image_rows: List[tuple[str, Dict[str, str]]] = [
+        (
+            "mean_img_size",
+            {
+                **{
+                    split: fmt_px_pair(
+                        stats[split]["image_stats"].get("mean_width"),
+                        stats[split]["image_stats"].get("mean_height"),
+                    )
+                    for split in splits
+                },
+                "total": "-",
+            },
+        ),
+        (
+            "median_img_size",
+            {
+                **{
+                    split: fmt_px_pair(
+                        stats[split]["image_stats"].get("median_width"),
+                        stats[split]["image_stats"].get("median_height"),
+                    )
+                    for split in splits
+                },
+                "total": "-",
+            },
+        ),
+        (
+            "p10_img_size",
+            {
+                **{
+                    split: fmt_px_pair(
+                        stats[split]["image_stats"].get("p10_width"),
+                        stats[split]["image_stats"].get("p10_height"),
+                    )
+                    for split in splits
+                },
+                "total": "-",
+            },
+        ),
+        (
+            "p90_img_size",
+            {
+                **{
+                    split: fmt_px_pair(
+                        stats[split]["image_stats"].get("p90_width"),
+                        stats[split]["image_stats"].get("p90_height"),
+                    )
+                    for split in splits
+                },
+                "total": "-",
+            },
+        ),
+        (
+            "mean_megapixels",
+            {
+                **{split: fmt_mp(stats[split]["image_stats"].get("mean_megapixels")) for split in splits},
+                "total": "-",
+            },
+        ),
+        (
+            "median_megapixels",
+            {
+                **{split: fmt_mp(stats[split]["image_stats"].get("median_megapixels")) for split in splits},
+                "total": "-",
+            },
+        ),
+        (
+            "mean_aspect_ratio",
+            {
+                **{split: fmt_float(stats[split]["image_stats"].get("mean_aspect_ratio")) for split in splits},
+                "total": "-",
+            },
+        ),
+        (
+            "median_aspect_ratio",
+            {
+                **{split: fmt_float(stats[split]["image_stats"].get("median_aspect_ratio")) for split in splits},
+                "total": "-",
+            },
+        ),
+    ]
+
+    bbox_rows: List[tuple[str, Dict[str, str]]] = [
+        (
+            "mean_bbox_center",
+            {
+                **{
+                    split: f"({fmt_float(stats[split]['label_stats'].get('mean_x'))}, {fmt_float(stats[split]['label_stats'].get('mean_y'))})"
+                    for split in splits
+                },
+                "total": "-",
+            },
+        ),
+        (
+            "mean_bbox_size",
+            {
+                **{
+                    split: f"({fmt_float(stats[split]['label_stats'].get('mean_width'))}, {fmt_float(stats[split]['label_stats'].get('mean_height'))})"
+                    for split in splits
+                },
+                "total": "-",
+            },
+        ),
+        (
+            "mean_bbox_area",
+            {
+                **{split: fmt_float(stats[split]["label_stats"].get("mean_area")) for split in splits},
+                "total": "-",
+            },
+        ),
+        (
+            "invalid_label_lines",
+            {
+                **{split: fmt_int(stats[split]["label_stats"].get("invalid_lines")) for split in splits},
+                "total": fmt_int(sum_from_splits(lambda split_stats: split_stats["label_stats"].get("invalid_lines"))),
+            },
+        ),
+        (
+            "area_bins",
+            {
+                **{split: fmt_bins(stats[split]["label_stats"].get("area_bins")) for split in splits},
+                "total": "-",
+            },
+        ),
+    ]
+
+    lines: List[str] = [
+        format_info("Dataset summary:"),
+        f"dataset_dir:  {stats.get('dataset_dir', 'n/a')}",
+        f"splits:       {', '.join(splits) if splits else 'n/a'}",
+        f"num_classes:  {fmt_int(num_classes)}",
+        "",
+    ]
+
+    lines.extend(render_table("?? Files / instances:", files_rows))
+    lines.append("")
+    lines.extend(render_table("?? Image geometry:", image_rows))
+    lines.append("")
+    lines.extend(render_table("?? BBox geometry (normalized YOLO):", bbox_rows))
+
     return "\n".join(lines)
 
 

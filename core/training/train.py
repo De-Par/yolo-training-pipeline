@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Set
-
 from core.common import PipelineError, ensure_local_mplconfigdir
-
 
 DEFAULTS: Dict[str, Any] = {
     "epochs": 100,
@@ -262,3 +260,4 @@ def run_training(model_path: str, train_kwargs: Mapping[str, Any]) -> Any:
                 details=f"Original error: {message}",
             ) from exc
         raise
+    

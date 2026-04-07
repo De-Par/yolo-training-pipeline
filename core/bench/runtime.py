@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import asdict
+import numpy as np
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
-
-import numpy as np
 from tqdm import tqdm
-
 from core.common import PipelineError
-
-from .data import (
+from core.bench.data import (
     build_quality_rows,
     ensure_quality_eval_dataset,
     ensure_speed_source,
@@ -23,10 +21,13 @@ from .data import (
     parse_label_counts,
     preprocess_image_to_nchw,
     resolve_class_names,
-    sample_images,
+    sample_benchmark_images,
+    sample_quality_images,
 )
-from .models import SpeedPointResult
-from .utils import get_any
+from core.bench.models import SpeedPointResult
+from core.bench.utils import get_any
+
+LOGGER = logging.getLogger(__name__)
 
 
 def maybe_set_affinity(cores: Optional[Sequence[int]]) -> None:
@@ -145,7 +146,7 @@ def benchmark_pt(images: Sequence[Path], cfg: Dict[str, Any], point_cfg: Dict[st
                 pass
         maybe_set_affinity(point_cfg.get('cores'))
 
-    model = YOLO(str(cfg['model']))
+    model = YOLO(str(cfg['model']), task=str(cfg['task']))
     net = model.model
     net.eval()
 
@@ -210,6 +211,13 @@ def benchmark_onnx(images: Sequence[Path], cfg: Dict[str, Any], point_cfg: Dict[
         providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
 
     session = ort.InferenceSession(str(cfg['model']), sess_options=so, providers=providers)
+    LOGGER.info(
+        "ONNX Runtime session | model=%s | requested_providers=%s | actual_providers=%s",
+        cfg["model"],
+        providers,
+        session.get_providers(),
+    )
+
     input_name = session.get_inputs()[0].name
     batch_size = int(cfg['benchmark'].get('batch', 1))
     warmup_iters = int(cfg['benchmark'].get('warmup_iters', 5))
@@ -251,13 +259,16 @@ def run_worker(cfg: Dict[str, Any], point_index: int) -> Dict[str, Any]:
     points = cfg['hardware']['points']
     point_cfg = points[point_index]
     run_shell(point_cfg.get('pre_cmd'))
+
     try:
-        image_paths, _labels_dir, _source_desc = ensure_speed_source(cfg)
-        images = sample_images(image_paths, cfg)
+        image_paths, _labels_dir, _image_root, _source_desc = ensure_speed_source(cfg)
+        images = sample_benchmark_images(image_paths, cfg)
         model_format = str(cfg['model_format']).lower()
+
         if model_format == 'pt':
             return benchmark_pt(images, cfg, point_cfg)
         return benchmark_onnx(images, cfg, point_cfg)
+
     finally:
         run_shell(point_cfg.get('post_cmd'))
 
@@ -265,10 +276,25 @@ def run_worker(cfg: Dict[str, Any], point_index: int) -> Dict[str, Any]:
 def run_quality_eval(cfg: Dict[str, Any]) -> Dict[str, Any]:
     from ultralytics import YOLO
 
+    if str(cfg["task"]).lower() != "detect":
+        raise PipelineError(
+            f"Unsupported task for bench quality eval: {cfg['task']}",
+            hint="The current bench quality implementation supports only detect task."
+        )
+
     data_yaml, split, labels_dir, image_root, tmp_dir, _source_desc = ensure_quality_eval_dataset(cfg)
     try:
+        LOGGER.info(
+            "Quality eval dataset | data_yaml=%s | split=%s | image_root=%s | labels_dir=%s",
+            data_yaml,
+            split,
+            image_root,
+            labels_dir,
+        )
+
         device = pick_device_string(cfg)
         imgsz_mode = str(cfg['imgsz']['mode']).lower()
+
         if imgsz_mode == 'square':
             imgsz = int(cfg['imgsz']['value'])
             rect = False
@@ -283,6 +309,7 @@ def run_quality_eval(cfg: Dict[str, Any]) -> Dict[str, Any]:
         plots = bool(cfg['quality'].get('plots', False))
         persist_quality_artifacts = save_json or plots
         quality_run_tmp: tempfile.TemporaryDirectory[str] | None = None
+
         if persist_quality_artifacts:
             quality_project = Path(cfg['output']['dir']).resolve()
             quality_name = 'quality_artifacts'
@@ -293,7 +320,7 @@ def run_quality_eval(cfg: Dict[str, Any]) -> Dict[str, Any]:
             quality_name = 'quality_eval'
             run_dir = None
 
-        model = YOLO(str(cfg['model']))
+        model = YOLO(str(cfg['model']), task=str(cfg['task']))
         try:
             metrics = model.val(
                 data=str(data_yaml),
@@ -314,6 +341,12 @@ def run_quality_eval(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
             results_dict = getattr(metrics, 'results_dict', {}) or {}
             class_names = resolve_class_names(cfg, data_yaml, labels_dir)
+            LOGGER.info(
+                "Quality eval class names (%d): %s",
+                len(class_names),
+                class_names,
+            )
+
             per_class_maps = [float(x) for x in list(metrics.box.maps)[: len(class_names)]]
             quality_rows = build_quality_rows(
                 class_names,
@@ -362,6 +395,7 @@ def build_speed_results(cfg: Dict[str, Any], script_path: Path, config_path: Pat
             data = json.loads(result_path.read_text(encoding='utf-8'))
         finally:
             result_path.unlink(missing_ok=True)
+            
         results.append(
             SpeedPointResult(
                 label=str(data['label']),

@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 import tempfile
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
-
 import numpy as np
 import yaml
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from PIL import Image
-
 from core.common import PipelineError
-
-from .models import DatasetStats
-from .utils import load_yaml
+from core.bench.models import DatasetStats
+from core.bench.utils import load_yaml
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 
@@ -172,10 +171,25 @@ def preprocess_image_to_nchw(image_path: Path, cfg: Dict[str, Any]) -> Tuple[np.
         return arr, (orig_h, orig_w), (target_h, target_w)
 
 
-def sample_images(image_paths: Sequence[Path], cfg: Dict[str, Any]) -> List[Path]:
+def sample_quality_images(image_paths: Sequence[Path], cfg: Dict[str, Any]) -> List[Path]:
+    max_images = int(cfg["quality"].get("max_images", 0) or 0)
+    shuffle = bool(cfg["quality"].get("shuffle", False))
+    seed = int(cfg["quality"].get("seed", 42))
+
+    items = list(image_paths)
+    if shuffle:
+        rng = random.Random(seed)
+        rng.shuffle(items)
+    if max_images > 0:
+        items = items[:max_images]
+    return items
+
+
+def sample_benchmark_images(image_paths: Sequence[Path], cfg: Dict[str, Any]) -> List[Path]:
     max_images = int(cfg["benchmark"].get("max_images", 0) or 0)
     shuffle = bool(cfg["benchmark"].get("shuffle", False))
     seed = int(cfg["benchmark"].get("seed", 42))
+
     items = list(image_paths)
     if shuffle:
         rng = random.Random(seed)
@@ -292,42 +306,134 @@ def ensure_speed_source(cfg: Dict[str, Any]) -> tuple[List[Path], Optional[Path]
     return list_images_from_dir(images_dir), labels_dir, images_dir, f"dir:{images_dir}"
 
 
-def ensure_quality_eval_dataset(cfg: Dict[str, Any]) -> tuple[Path, str, Path, Optional[Path], Optional[tempfile.TemporaryDirectory[str]], str]:
-    source_cfg = get_source_cfg(cfg, 'quality')
-    split = get_source_split(source_cfg, 'test')
-    if source_cfg.get('data_yaml'):
-        data_yaml = Path(str(source_cfg['data_yaml'])).expanduser().resolve()
+def _infer_subset_relative_base(
+    image_paths: Sequence[Path],
+    image_root: Optional[Path],
+) -> Path:
+    if image_root is not None:
+        return image_root
+    if not image_paths:
+        raise PipelineError("Unable to infer subset base directory from an empty image list.")
+    parent_paths = [str(path.parent) for path in image_paths]
+    return Path(os.path.commonpath(parent_paths)).resolve()
+
+
+def _materialize_quality_subset_dataset(
+    image_paths: Sequence[Path],
+    *,
+    split: str,
+    class_names: Sequence[str],
+    labels_dir: Path,
+    image_root: Optional[Path],
+) -> tuple[Path, Path, Path, tempfile.TemporaryDirectory[str]]:
+    if not image_paths:
+        raise PipelineError("Quality subset resolved to zero images.")
+
+    tmp_dir = tempfile.TemporaryDirectory(prefix="yolo_benchmark_quality_subset_")
+    root = Path(tmp_dir.name)
+    subset_images_root = root / "images" / split
+    subset_labels_root = root / "labels" / split
+    subset_images_root.mkdir(parents=True, exist_ok=True)
+    subset_labels_root.mkdir(parents=True, exist_ok=True)
+
+    relative_base = _infer_subset_relative_base(image_paths, image_root)
+
+    for index, image_path in enumerate(image_paths):
+        try:
+            relative_path = image_path.relative_to(relative_base)
+        except ValueError:
+            relative_path = Path(f"{index:06d}_{image_path.name}")
+
+        subset_image_path = subset_images_root / relative_path
+        subset_image_path.parent.mkdir(parents=True, exist_ok=True)
+        subset_image_path.symlink_to(image_path, target_is_directory=False)
+
+        source_label_path = resolve_label_path(image_path, labels_dir=labels_dir, image_root=image_root)
+        if source_label_path.exists():
+            subset_label_path = subset_labels_root / relative_path.with_suffix(".txt")
+            subset_label_path.parent.mkdir(parents=True, exist_ok=True)
+            subset_label_path.symlink_to(source_label_path, target_is_directory=False)
+
+    data_yaml = root / "benchmark_dataset.yaml"
+    payload = {
+        "path": str(root),
+        "train": f"images/{split}",
+        "val": f"images/{split}",
+        split: f"images/{split}",
+        "names": {idx: name for idx, name in enumerate(class_names)},
+    }
+    data_yaml.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return data_yaml, subset_labels_root, subset_images_root, tmp_dir
+
+
+def ensure_quality_eval_dataset(
+    cfg: Dict[str, Any]
+) -> tuple[Path, str, Path, Optional[Path], Optional[tempfile.TemporaryDirectory[str]], str]:
+    source_cfg = get_source_cfg(cfg, "quality")
+    split = get_source_split(source_cfg, "val")
+
+    if source_cfg.get("data_yaml"):
+        data_yaml = Path(str(source_cfg["data_yaml"])).expanduser().resolve()
         image_root = infer_images_dir_from_data_yaml(data_yaml, split)
-        labels_dir = Path(str(source_cfg['annotations_dir'])).expanduser().resolve() if source_cfg.get('annotations_dir') else infer_labels_dir_from_data_yaml(data_yaml, split)
+        labels_dir = (
+            Path(str(source_cfg["annotations_dir"])).expanduser().resolve()
+            if source_cfg.get("annotations_dir")
+            else infer_labels_dir_from_data_yaml(data_yaml, split)
+        )
         if labels_dir is None:
             raise PipelineError(
-                'Unable to resolve label directory for quality evaluation.',
-                hint='Set dataset.quality.annotations_dir or use a standard YOLO dataset YAML with a labels/<split> directory.',
+                "Unable to resolve label directory for quality evaluation.",
+                hint="Set dataset.quality.annotations_dir or use a standard YOLO dataset YAML with a labels/<split> directory."
             )
+
+        class_names = resolve_class_names(cfg, data_yaml, labels_dir)
+        image_paths = list_images_from_split(data_yaml, split)
+        sampled_image_paths = sample_quality_images(image_paths, cfg)
+
+        if len(sampled_image_paths) != len(image_paths):
+            subset_yaml, subset_labels_dir, subset_image_root, tmp_dir = _materialize_quality_subset_dataset(
+                sampled_image_paths,
+                split=split,
+                class_names=class_names,
+                labels_dir=labels_dir,
+                image_root=image_root,
+            )
+            return (
+                subset_yaml,
+                split,
+                subset_labels_dir,
+                subset_image_root,
+                tmp_dir,
+                f"yaml:{data_yaml.name}:{split}:subset={len(sampled_image_paths)}/{len(image_paths)}",
+            )
+
         return data_yaml, split, labels_dir, image_root, None, f"yaml:{data_yaml.name}:{split}"
 
-    images_dir = Path(str(source_cfg['images_dir'])).expanduser().resolve()
-    labels_dir = Path(str(source_cfg['annotations_dir'])).expanduser().resolve()
+    images_dir = Path(str(source_cfg["images_dir"])).expanduser().resolve()
+    labels_dir = Path(str(source_cfg["annotations_dir"])).expanduser().resolve()
     class_names = resolve_class_names(cfg, None, labels_dir)
     if not class_names:
         raise PipelineError(
-            'Unable to resolve class names for benchmark quality evaluation.',
-            hint='Set dataset.class_names, dataset.class_names_file, or point dataset.quality.data_yaml to an existing YOLO dataset YAML.',
+            "Unable to resolve class names for benchmark quality evaluation.",
+            hint="Set dataset.class_names, dataset.class_names_file, or point dataset.quality.data_yaml to an existing YOLO dataset YAML."
         )
 
-    tmp_dir = tempfile.TemporaryDirectory(prefix='yolo_benchmark_dataset_')
-    root = Path(tmp_dir.name)
-    (root / 'images').mkdir(parents=True, exist_ok=True)
-    (root / 'labels').mkdir(parents=True, exist_ok=True)
-    (root / 'images' / split).symlink_to(images_dir, target_is_directory=True)
-    (root / 'labels' / split).symlink_to(labels_dir, target_is_directory=True)
-    data_yaml = root / 'benchmark_dataset.yaml'
-    payload = {
-        'path': str(root),
-        'train': f'images/{split}',
-        'val': f'images/{split}',
-        split: f'images/{split}',
-        'names': {idx: name for idx, name in enumerate(class_names)},
-    }
-    data_yaml.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding='utf-8')
-    return data_yaml, split, labels_dir, images_dir, tmp_dir, f"dir:{images_dir}"
+    image_paths = list_images_from_dir(images_dir)
+    sampled_image_paths = sample_quality_images(image_paths, cfg)
+
+    data_yaml, subset_labels_dir, subset_image_root, tmp_dir = _materialize_quality_subset_dataset(
+        sampled_image_paths,
+        split=split,
+        class_names=class_names,
+        labels_dir=labels_dir,
+        image_root=images_dir,
+    )
+
+    return (
+        data_yaml,
+        split,
+        subset_labels_dir,
+        subset_image_root,
+        tmp_dir,
+        f"dir:{images_dir}:subset={len(sampled_image_paths)}/{len(image_paths)}",
+    )

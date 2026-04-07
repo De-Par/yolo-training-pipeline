@@ -4,9 +4,7 @@ import shutil
 
 from pathlib import Path
 from typing import Any
-
 from core.common import PipelineError
-
 
 __all__ = [
     "build_name",

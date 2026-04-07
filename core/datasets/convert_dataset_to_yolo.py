@@ -6,9 +6,7 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
-
 from PIL import Image
-
 from core.common import PipelineError, ProgressCallback, format_info
 from core.common.fs import clean_split_dirs, safe_link_or_copy
 from core.datasets.common import clean_output_dir, safe_dataset_key, write_classes_txt, write_dataset_yaml

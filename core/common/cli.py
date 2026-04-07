@@ -4,7 +4,6 @@ import sys
 
 from collections.abc import Callable
 from typing import TypeVar
-
 from core.common.errors import PipelineError, format_pipeline_error
 from core.common.progress import ProgressCallback, create_progress_reporter, write_console_line
 
@@ -18,7 +17,7 @@ def stdout_logger(message: str) -> None:
     write_console_line(message, flush=True)
 
 
-def exit_with_pipeline_error(exc: PipelineError) -> "NoReturn":
+def exit_with_pipeline_error(exc: PipelineError) -> None:
     print(format_pipeline_error(exc), file=sys.stderr, flush=True)
     raise SystemExit(1) from exc
 

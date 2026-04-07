@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import shutil
+import yaml
 
 from pathlib import Path
 from typing import Dict, List, Sequence
-
-import yaml
-
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 DATASET_SPLIT_ORDER = ("train", "val", "test")

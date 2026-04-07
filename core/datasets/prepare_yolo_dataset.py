@@ -3,13 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import yaml
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set
-
-import yaml
-
 from core.common import PipelineError, ProgressCallback, format_info, format_warning
 from core.datasets.common import (
     DATASET_SPLIT_ORDER,
@@ -255,14 +253,31 @@ def _parse_label_counts(label_path: Optional[Path]) -> Dict[int, int]:
     return counts
 
 
-def _collect_dataset_items(dataset_dir: Path, splits: Sequence[str]) -> CollectedDatasetItems:
+def _collect_dataset_items(
+    dataset_dir: Path,
+    splits: Sequence[str],
+    progress_callback: ProgressCallback | None = None,
+) -> CollectedDatasetItems:
     items: List[DatasetImageItem] = []
     dropped_orphan_labels = 0
+
+    total_images_all = 0
+    split_to_images: Dict[str, List[Path]] = {}
+    for split in splits:
+        images_dir = require_existing(dataset_dir / "images" / split, f"images/{split}")
+        image_paths = sorted(iter_image_files(images_dir), key=lambda path: path.name)
+        split_to_images[split] = image_paths
+        total_images_all += len(image_paths)
+
+    processed = 0
+    if progress_callback is not None:
+        progress_callback("prepare:collect:init", 0, total_images_all, "prepare:collect")
 
     for split in splits:
         images_dir = require_existing(dataset_dir / "images" / split, f"images/{split}")
         labels_dir = dataset_dir / "labels" / split
-        image_paths = sorted(iter_image_files(images_dir), key=lambda path: path.name)
+        image_paths = split_to_images[split]
+
         image_stems = {path.stem for path in image_paths}
         label_stems = {path.stem for path in labels_dir.glob("*.txt")} if labels_dir.exists() else set()
         dropped_orphan_labels += len(label_stems - image_stems)
@@ -271,7 +286,9 @@ def _collect_dataset_items(dataset_dir: Path, splits: Sequence[str]) -> Collecte
             label_path = labels_dir / f"{image_path.stem}.txt" if labels_dir.exists() else None
             if label_path is not None and not label_path.exists():
                 label_path = None
+
             relative_key = str(image_path.relative_to(images_dir).with_suffix(""))
+
             items.append(
                 DatasetImageItem(
                     source_split=split,
@@ -283,6 +300,16 @@ def _collect_dataset_items(dataset_dir: Path, splits: Sequence[str]) -> Collecte
                     class_counts=_parse_label_counts(label_path),
                 )
             )
+
+            processed += 1
+            if progress_callback is not None:
+                progress_callback(
+                    "prepare:collect",
+                    processed,
+                    total_images_all,
+                    f"prepare:collect: {split}/{image_path.name}",
+                )
+
     return CollectedDatasetItems(items=items, dropped_orphan_labels=dropped_orphan_labels)
 
 
@@ -423,10 +450,11 @@ def _class_totals_from_items(items: Sequence[DatasetImageItem]) -> Dict[int, int
     return totals
 
 
-def _greedy_pick_item(items: Sequence[DatasetImageItem], deficits: Dict[int, int]) -> int | None:
+def _greedy_pick_item(items: Sequence[DatasetImageItem], deficits: Dict[int, int]) -> tuple[int | None, int]:
     best_index: int | None = None
     best_gain = 0
     best_support = -1
+
     for index, item in enumerate(items):
         gain = 0
         support = 0
@@ -435,24 +463,29 @@ def _greedy_pick_item(items: Sequence[DatasetImageItem], deficits: Dict[int, int
             if contribution > 0:
                 gain += contribution
                 support += 1
+
         if gain > best_gain or (gain == best_gain and gain > 0 and support > best_support):
             best_index = index
             best_gain = gain
             best_support = support
-    return best_index if best_gain > 0 else None
+
+    return best_index, best_gain
 
 
 def _allocate_combined_by_instances(
     items: List[DatasetImageItem],
     class_names: List[str],
     split_config: PrepareSplitConfig,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[Dict[str, List[DatasetImageItem]], Dict[str, Any]]:
     randomizer = random.Random(split_config.seed)
     shuffled = list(items)
     randomizer.shuffle(shuffled)
+
     assignments: Dict[str, List[DatasetImageItem]] = {split: [] for split in _resolve_target_split_names(split_config)}
     targets = _compute_target_split_sizes(len(shuffled), split_config)
     class_totals = _class_totals_from_items(shuffled)
+
     constraint_targets = {
         "val": _resolve_per_class_minima(
             class_names,
@@ -473,10 +506,28 @@ def _allocate_combined_by_instances(
 
     remaining = shuffled
     unmet_summary: Dict[str, Any] = {}
+
+    initial_deficit_total = sum(
+        sum(constraint_targets[split].values())
+        for split in ("test", "val")
+        if split in assignments and constraint_targets.get(split)
+    )
+
+    if progress_callback is not None:
+        progress_callback(
+            "prepare:allocate:init",
+            0,
+            max(1, initial_deficit_total),
+            "prepare:allocate",
+        )
+
+    total_done = 0
+
     for split in [name for name in ("test", "val") if name in assignments and constraint_targets.get(name)]:
         deficits = dict(constraint_targets[split])
+
         while deficits:
-            picked_index = _greedy_pick_item(remaining, deficits)
+            picked_index, best_gain = _greedy_pick_item(remaining, deficits)
             if picked_index is None:
                 preview = ", ".join(
                     f"{class_names[class_id]}: {value}" for class_id, value in list(deficits.items())[:6]
@@ -485,21 +536,41 @@ def _allocate_combined_by_instances(
                     f"Unable to satisfy {split} instance constraints: {preview}",
                     hint="Lower the requested minimum instances, relax the split fractions, or merge/drop rare classes first.",
                 )
+
             picked = remaining.pop(picked_index)
             assignments[split].append(picked)
+
+            before = sum(deficits.values())
+
             updated: Dict[int, int] = {}
             for class_id, deficit in deficits.items():
                 left = deficit - picked.class_counts.get(class_id, 0)
                 if left > 0:
                     updated[class_id] = left
             deficits = updated
-        unmet_summary[split] = {"min_instances_satisfied": True, "assigned_images": len(assignments[split])}
+
+            after = sum(deficits.values())
+            total_done += max(0, before - after)
+
+            if progress_callback is not None:
+                progress_callback(
+                    "prepare:allocate",
+                    min(total_done, max(1, initial_deficit_total)),
+                    max(1, initial_deficit_total),
+                    f"prepare:allocate: {split} picked={len(assignments[split])} remaining_items={len(remaining)} deficit_total={after} best_gain={best_gain}",
+                )
+
+        unmet_summary[split] = {
+            "min_instances_satisfied": True,
+            "assigned_images": len(assignments[split]),
+        }
 
     randomizer.shuffle(remaining)
     for split in [name for name in ("val", "test") if name in assignments]:
         needed = max(0, targets[split] - len(assignments[split]))
         assignments[split].extend(remaining[:needed])
         del remaining[:needed]
+
     assignments["train"].extend(remaining)
 
     return assignments, {
@@ -527,11 +598,6 @@ def _allocate_combined_random(
         cursor = next_cursor
     assignments["train"].extend(shuffled[cursor:])
     return assignments, {"mode": split_config.mode, "seed": split_config.seed, "target_images": targets}
-
-
-def _sanitize_name_token(value: str) -> str:
-    token = normalize_name(value).replace('-', '_')
-    return token or 'item'
 
 
 def _build_hashed_name(item: DatasetImageItem, used_stems: Set[str], used_names: Set[str]) -> tuple[str, str]:
@@ -660,7 +726,7 @@ def _apply_split_strategy(
         }
         return sampling_summary
 
-    collected = _collect_dataset_items(dataset_dir, source_splits)
+    collected = _collect_dataset_items(dataset_dir, source_splits, progress_callback=progress_callback)
     if not collected.items:
         raise PipelineError(
             f"No images found across existing dataset splits in {dataset_dir}",
@@ -670,7 +736,7 @@ def _apply_split_strategy(
     if split_config.mode == "resplit_combined_random":
         assignments, split_summary = _allocate_combined_random(collected.items, split_config)
     else:
-        assignments, split_summary = _allocate_combined_by_instances(collected.items, class_names, split_config)
+        assignments, split_summary = _allocate_combined_by_instances(collected.items, class_names, split_config, progress_callback=progress_callback)
 
     rewritten = _rewrite_dataset_splits(
         dataset_dir,
@@ -687,6 +753,7 @@ def _apply_split_strategy(
 def _build_remap_plan(class_names: List[str], recipe: PrepareRecipe) -> tuple[List[str], Dict[int, int], Dict[str, Any]]:
     keep_ids: Optional[Set[int]] = None
     drop_ids: Set[int] = set()
+
     if recipe.keep_tokens:
         keep_ids = parse_class_selectors(recipe.keep_tokens, class_names)
     if recipe.drop_tokens:
@@ -697,42 +764,74 @@ def _build_remap_plan(class_names: List[str], recipe: PrepareRecipe) -> tuple[Li
     if not final_keep:
         raise PipelineError("After applying recipe keep/drop selectors, no classes remain.")
 
-    assigned_targets: Dict[int, str] = {class_id: class_names[class_id] for class_id in sorted(final_keep)}
     remap_sources_seen: Set[int] = set()
     remap_summary: List[Dict[str, Any]] = []
-    for rule in recipe.remap_rules:
-        if not isinstance(rule, dict):
-            raise PipelineError("Each item in recipe classes.remap must be a mapping")
-        target_name = str(rule.get("name", "")).strip()
-        if not target_name:
-            raise PipelineError("Each remap rule must define a non-empty 'name'")
-        source_tokens = _coerce_selector_tokens(rule.get("from"))
-        if not source_tokens:
-            raise PipelineError(f"Remap rule for '{target_name}' must define non-empty 'from'")
-        source_ids = parse_class_selectors(source_tokens, class_names)
-        if not source_ids:
-            raise PipelineError(f"Remap rule for '{target_name}' resolved to zero classes")
-        if not source_ids.issubset(final_keep):
-            invalid = sorted(source_ids - final_keep)
-            raise PipelineError(f"Remap rule for '{target_name}' references dropped classes: {invalid}")
-        overlap = remap_sources_seen & source_ids
-        if overlap:
-            raise PipelineError(f"Multiple remap rules target the same source classes: {sorted(overlap)}")
-        remap_sources_seen.update(source_ids)
-        for source_id in sorted(source_ids):
-            assigned_targets[source_id] = target_name
-        remap_summary.append({"name": target_name, "source_ids": sorted(source_ids)})
 
     new_class_names: List[str] = []
     target_to_new_id: Dict[str, int] = {}
     old_to_new: Dict[int, int] = {}
-    for old_id in sorted(final_keep):
-        target_name = assigned_targets[old_id]
+
+    # 1) First assign new ids strictly in remap order
+    for rule in recipe.remap_rules:
+        if not isinstance(rule, dict):
+            raise PipelineError("Each item in recipe classes.remap must be a mapping")
+
+        target_name = str(rule.get("name", "")).strip()
+        if not target_name:
+            raise PipelineError("Each remap rule must define a non-empty 'name'")
+
+        source_tokens = _coerce_selector_tokens(rule.get("from"))
+        if not source_tokens:
+            raise PipelineError(f"Remap rule for '{target_name}' must define non-empty 'from'")
+
+        source_ids = parse_class_selectors(source_tokens, class_names)
+        if not source_ids:
+            raise PipelineError(f"Remap rule for '{target_name}' resolved to zero classes")
+
+        if not source_ids.issubset(final_keep):
+            invalid = sorted(source_ids - final_keep)
+            raise PipelineError(f"Remap rule for '{target_name}' references dropped classes: {invalid}")
+
+        overlap = remap_sources_seen & source_ids
+        if overlap:
+            raise PipelineError(f"Multiple remap rules target the same source classes: {sorted(overlap)}")
+
+        remap_sources_seen.update(source_ids)
+
         target_key = normalize_name(target_name)
         if target_key not in target_to_new_id:
             target_to_new_id[target_key] = len(new_class_names)
             new_class_names.append(target_name)
-        old_to_new[old_id] = target_to_new_id[target_key]
+
+        new_id = target_to_new_id[target_key]
+        for source_id in sorted(source_ids):
+            old_to_new[source_id] = new_id
+
+        remap_summary.append({
+            "name": target_name,
+            "source_ids": sorted(source_ids),
+            "new_id": new_id,
+        })
+
+    # 2) Handle classes kept but not mentioned in remap
+    unassigned = sorted(final_keep - remap_sources_seen)
+
+    if recipe.remap_rules and unassigned:
+        preview = ", ".join(f"{cid}:{class_names[cid]}" for cid in unassigned[:10])
+        raise PipelineError(
+            f"Some kept classes were not covered by classes.remap: {preview}",
+            hint="Either add them to remap rules or drop them explicitly for deterministic transfer-learning class ids.",
+        )
+
+    # 3) No remap rules case -> preserve kept classes in original id order
+    if not recipe.remap_rules:
+        for old_id in sorted(final_keep):
+            target_name = class_names[old_id]
+            target_key = normalize_name(target_name)
+            if target_key not in target_to_new_id:
+                target_to_new_id[target_key] = len(new_class_names)
+                new_class_names.append(target_name)
+            old_to_new[old_id] = target_to_new_id[target_key]
 
     summary = {
         "kept_old_ids": sorted(final_keep),
@@ -741,6 +840,7 @@ def _build_remap_plan(class_names: List[str], recipe: PrepareRecipe) -> tuple[Li
         "new_class_names": new_class_names,
         "remap_rules": remap_summary,
         "empty_policy": recipe.empty_policy,
+        "class_order_policy": "remap_order" if recipe.remap_rules else "original_id_order",
     }
     return new_class_names, old_to_new, summary
 
@@ -850,6 +950,15 @@ def prepare_yolo_dataset(
     progress_callback: ProgressCallback | None = None,
 ) -> Dict[str, Any]:
     log = logger or _noop
+
+    # -----------------------------------------------------------------------------
+    # Stage 0. Resolve inputs and load the current ORIGINAL dataset state
+    #
+    # At this point:
+    # - classes.txt contains ORIGINAL class names
+    # - labels still use ORIGINAL class ids
+    # - recipe is only parsed, nothing has been mutated yet
+    # -----------------------------------------------------------------------------
     dataset_dir = require_existing(options.dataset_dir, "--dataset-dir").resolve()
     recipe = _load_recipe(options.recipe_path)
 
@@ -860,6 +969,7 @@ def prepare_yolo_dataset(
     class_names = load_class_names(classes_path)
     if not class_names:
         raise PipelineError(f"No class names found in {classes_path}")
+    
     if not _recipe_requests_mutation(recipe, dataset_dir=dataset_dir):
         raise PipelineError(
             "Prepare recipe does not request any dataset changes.",
@@ -869,46 +979,108 @@ def prepare_yolo_dataset(
     log(format_info(f"Preparing YOLO dataset in place: {dataset_dir}"))
     log(format_info(f"Using recipe file: {options.recipe_path.resolve()}"))
 
-    split_summary = _apply_split_strategy(
-        dataset_dir,
-        recipe.split,
-        class_names,
-        progress_callback=progress_callback,
-    )
-    active_splits = split_summary["active_splits"]
-    _ensure_required_splits_non_empty(dataset_dir, active_splits, stage_name="split preparation")
-    if split_summary.get("dropped_orphan_labels", 0) > 0:
-        log(
-            format_warning(
-                f"Dropped orphan labels during combined resplit: {split_summary['dropped_orphan_labels']}"
-            )
-        )
-    if split_summary.get("renamed_items", 0) > 0:
-        log(
-            format_info(
-                f"Renamed image/label pairs during combined resplit: {split_summary['renamed_items']}"
-            )
-        )
+    # Resolve currently existing splits once from the ORIGINAL dataset
+    # We need them for the first transformation pass
+    source_splits = _resolve_existing_splits(dataset_dir)
 
+    # -----------------------------------------------------------------------------
+    # Stage 1. Build class transformation plan from ORIGINAL classes
+    #
+    # This stage interprets:
+    # - classes.keep
+    # - classes.drop
+    # - classes.remap
+    #
+    # Output:
+    # - new_class_names : FINAL class list after keep/drop/remap
+    # - old_to_new      : mapping ORIGINAL class id -> FINAL class id
+    # - remap_plan      : summary for reporting
+    #
+    # Important:
+    # No files are changed yet in this stage.
+    # -----------------------------------------------------------------------------
     new_class_names, old_to_new, remap_plan = _build_remap_plan(class_names, recipe)
+
+    # -----------------------------------------------------------------------------
+    # Stage 2. Apply keep/drop/remap + empty_policy IN PLACE on the existing splits
+    #
+    # This mutates label files so they now use FINAL class ids
+    # If empty_policy == "drop", images whose labels become empty are deleted here
+    #
+    # After this stage:
+    # - the dataset content already reflects the FINAL class space
+    # - split logic must operate on these transformed labels
+    # -----------------------------------------------------------------------------
     rewrite_summary = _apply_remap_in_place(
         dataset_dir,
-        active_splits,
+        source_splits,
         old_to_new,
         recipe.empty_policy,
         progress_callback=progress_callback,
     )
-    _ensure_required_splits_non_empty(dataset_dir, active_splits, stage_name="class filtering/remapping")
 
+    _ensure_required_splits_non_empty(
+        dataset_dir,
+        source_splits,
+        stage_name="class filtering/remapping",
+    )
+
+    # -----------------------------------------------------------------------------
+    # Stage 3. Apply split strategy on the NEW dataset state / NEW classes
+    #
+    # This is the key semantic change:
+    # split constraints must now be evaluated against FINAL classes, not ORIGINAL
+    #
+    # Because labels were already rewritten in Stage 2:
+    # - _collect_dataset_items() sees FINAL class ids
+    # - combined resplit constraints use new_class_names
+    # - empty images already removed by empty_policy do not participate in splitting
+    # -----------------------------------------------------------------------------
+    split_summary = _apply_split_strategy(
+        dataset_dir,
+        recipe.split,
+        new_class_names,
+        progress_callback=progress_callback,
+    )
+    active_splits = split_summary["active_splits"]
+
+    _ensure_required_splits_non_empty(
+        dataset_dir,
+        active_splits,
+        stage_name="split preparation",
+    )
+
+    if split_summary.get("dropped_orphan_labels", 0) > 0:
+        log(format_warning(f"Dropped orphan labels during combined resplit: {split_summary['dropped_orphan_labels']}"))
+
+    if split_summary.get("renamed_items", 0) > 0:
+        log(format_info(f"Renamed image/label pairs during combined resplit: {split_summary['renamed_items']}"))
+
+
+    # -----------------------------------------------------------------------------
+    # Stage 4. Finalize dataset metadata files
+    #
+    # Now that both:
+    # - class transformation
+    # - split transformation
+    # are complete, we rewrite metadata to match the FINAL dataset state
+    #
+    # We remove stale YAMLs, write final classes.txt, write final data.yaml,
+    # then persist prepare_report.json
+    # -----------------------------------------------------------------------------
     dataset_name = recipe.dataset_name or dataset_dir.name
+
     if progress_callback is not None:
         progress_callback("prepare:finalize:init", 0, 4, "prepare:finalize")
+
     _remove_stale_dataset_yamls(dataset_dir, options.recipe_path)
     if progress_callback is not None:
         progress_callback("prepare:finalize", 1, 4, "prepare:finalize: remove stale yaml")
+
     classes_txt = write_classes_txt(dataset_dir, new_class_names)
     if progress_callback is not None:
         progress_callback("prepare:finalize", 2, 4, "prepare:finalize: write classes.txt")
+
     data_yaml = write_dataset_yaml(dataset_dir, new_class_names, dataset_name, split_names=active_splits)
     if progress_callback is not None:
         progress_callback("prepare:finalize", 3, 4, "prepare:finalize: write data.yaml")
@@ -924,22 +1096,29 @@ def prepare_yolo_dataset(
         "data_yaml": str(data_yaml.resolve()),
         "mutated_in_place": True,
     }
+
     prepare_report_path = dataset_dir / "prepare_report.json"
-    prepare_report_path.write_text(json.dumps(prepare_report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    prepare_report_path.write_text(
+        json.dumps(prepare_report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     if progress_callback is not None:
         progress_callback("prepare:finalize", 4, 4, "prepare:finalize: write report")
 
+    # -----------------------------------------------------------------------------
+    # Stage 5. Log final state and return structured result
+    # -----------------------------------------------------------------------------
     final_split_counts = {split: count_images(dataset_dir / "images" / split) for split in active_splits}
+
     log(format_info(f"Wrote classes.txt: {classes_txt}"))
     log(format_info(f"Wrote data.yaml: {data_yaml}"))
     log(format_info(f"Wrote prepare report: {prepare_report_path}"))
-    log(
-        format_info(
-            "Final dataset state: "
-            + f"classes={len(new_class_names)}, "
-            + ", ".join(f"{split}_images={final_split_counts[split]}" for split in active_splits)
-        )
-    )
+
+    state_str = "Final dataset state: " + \
+        f"classes={len(new_class_names)}, " + \
+        ", ".join(f"{split}_images={final_split_counts[split]}" for split in active_splits)
+    
+    log(format_info(state_str))
     log(format_info("Completed"))
 
     return {

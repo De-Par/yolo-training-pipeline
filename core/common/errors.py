@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
-
 from core.common.logging import format_detail, format_error, format_hint
 
 
 class PipelineError(RuntimeError):
-    """Domain-level error for dataset/training pipeline operations."""
-
+    """Domain-level error for dataset/training pipeline operations"""
     def __init__(
         self,
         message: str,

@@ -28,3 +28,4 @@ class SpeedPointResult:
 class BenchmarkConfig:
     raw: Dict[str, Any]
     path: Path
+    

@@ -5,7 +5,6 @@ import sys
 from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any, Dict, Optional, TextIO
-
 from tqdm import tqdm
 
 
@@ -18,7 +17,7 @@ def noop_progress_callback(stage: str, current: int, total: int, message: str) -
 
 
 class NullProgressReporter:
-    """Progress reporter with the same API that intentionally does nothing."""
+    """Progress reporter with the same API that intentionally does nothing"""
 
     callback: ProgressCallback = staticmethod(noop_progress_callback)
 
@@ -39,7 +38,7 @@ class NullProgressReporter:
 
 
 class TqdmProgressReporter:
-    """Reusable staged progress reporter compatible with core progress callbacks."""
+    """Reusable staged progress reporter compatible with core progress callbacks"""
 
     def __init__(
         self,

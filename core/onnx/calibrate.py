@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterator
-
 import cv2
 import numpy as np
 
+from pathlib import Path
+from typing import Iterator
 from core.common import PipelineError
 
 try:
@@ -16,7 +15,6 @@ except ImportError:
 
     class CalibrationDataReader:  # type: ignore[override]
         pass
-
 
 __all__ = ["ImageCalibrationDataReader", "collect_image_paths", "letterbox", "preprocess_image"]
 
@@ -95,3 +93,4 @@ class ImageCalibrationDataReader(CalibrationDataReader):
 
     def rewind(self):
         self._iterator = None
+        

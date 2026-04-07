@@ -6,8 +6,8 @@ import math
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 from core.common import PipelineError, ProgressCallback, ensure_local_mplconfigdir
+
 
 def _to_float(value: Any) -> float:
     try:
