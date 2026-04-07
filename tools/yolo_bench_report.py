@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from tools._runtime import bootstrap_project_root
+bootstrap_project_root(__file__, levels=1)
+
 import argparse
 import json
 
 from pathlib import Path
-
-from _runtime import bootstrap_project_root
-
-bootstrap_project_root(__file__, levels=1)
-
 from core.bench import run_yolo_benchmark_report
 from core.common import run_cli, stdout_logger
 
@@ -52,3 +50,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    

@@ -1,1 +1,1 @@
-"""CLI entrypoints for the YOLO training pipeline."""
+"""CLI entrypoints for the YOLO training pipeline"""

@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from tools._runtime import bootstrap_project_root
+bootstrap_project_root(__file__, levels=1)
+
 import argparse
 
 from pathlib import Path
 from typing import Any, Dict
-
-from _runtime import bootstrap_project_root
-
-bootstrap_project_root(__file__, levels=1)
-
 from core.common import format_info, format_warning, run_cli_with_progress
 from core.training.train import build_training_plan, load_cfg, run_training
 
@@ -73,10 +71,10 @@ def main() -> None:
         print(f"  - {key}: {plan['train_kwargs'][key]}", flush=True)
 
     def _launch(progress_callback):
-        progress_callback("train:launch:init", 0, 2, "train:launch: initialize model")
-        progress_callback("train:launch", 1, 2, "train:launch: run training")
+        #progress_callback("train:launch:init", 0, 2, "train:launch: initialize model")
+        #progress_callback("train:launch", 1, 2, "train:launch: run training")
         run_training(plan["model"], plan["train_kwargs"])
-        progress_callback("train:launch", 2, 2, "train:launch: done")
+        #progress_callback("train:launch", 2, 2, "train:launch: done")
 
     run_cli_with_progress(
         desc="train launch",
@@ -87,3 +85,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    

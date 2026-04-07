@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import sys
-from pathlib import Path
-
-TOOLS_DIR = Path(__file__).resolve().parents[1]
-if str(TOOLS_DIR) not in sys.path:
-    sys.path.insert(0, str(TOOLS_DIR))
-
-from _runtime import bootstrap_project_root
-
+from tools._runtime import bootstrap_project_root
 bootstrap_project_root(__file__, levels=2)
 
+import argparse
+
+from pathlib import Path
 from core.common import format_info, run_cli_with_progress
 from core.onnx.common import build_onnx_artifact_name, ensure_dir, parse_hw, parse_imgsz
 from core.onnx.exporter import ExportConfig
@@ -39,10 +33,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--calib-dir", type=str, default=None, help="Calibration image directory required for INT8 quantization.")
     parser.add_argument("--calib-size", type=int, default=256, help="Maximum number of calibration images to use.")
     parser.add_argument("--calibration-method", type=str, choices=["minmax", "entropy", "percentile"], default="minmax", help="Calibration method for INT8 quantization.")
+    parser.add_argument("--calibration-percentile", type=float, default=None, help="Percentile value for percentile calibration, for example 99.99.")
+    parser.add_argument("--calibration-symmetric", action="store_true", help="Force symmetric tensor ranges during calibration when supported by ONNX Runtime.")
+    parser.add_argument("--quant-op-type", action="append", default=[], help=("Restrict static quantization to the given ONNX op type. "
+                                                                              "Pass multiple times, for example: --quant-op-type Conv --quant-op-type MatMul"))
+    parser.add_argument("--hist-safe-preset", action="store_true", help=("Safer preset for entropy/percentile calibration: "
+                                                                         "if no --quant-op-type is provided, quantize Conv only; "
+                                                                         "if percentile is used and no percentile is provided, use 99.99."))
     parser.add_argument("--u8u8", action="store_true", help="Use QUInt8 activations and weights instead of QInt8.")
     parser.add_argument("--reduce-range", action="store_true", help="Enable reduced-range INT8 quantization.")
     parser.add_argument("--no-per-channel", action="store_true", help="Disable per-channel weight quantization.")
+    parser.add_argument("--exclude-node", action="append", default=[], help=("Exact ONNX node name to exclude from INT8 quantization. "
+                                                                             "Pass multiple times to exclude several nodes."))
     parser.add_argument("--keep-io-types", action="store_true", help="Keep original model IO tensor types during FP16 conversion.")
+
     return parser.parse_args()
 
 
@@ -52,7 +56,23 @@ def main() -> None:
     def _run(progress_callback):
         artifact_dir = ensure_dir(Path(args.artifact_dir).expanduser().resolve())
         weights_path = Path(args.weights).expanduser().resolve()
-        export_path = artifact_dir / build_onnx_artifact_name(weights_path.stem, stage="export", precision="fp32", tag=args.tag)
+
+        export_path = artifact_dir / build_onnx_artifact_name(
+            weights_path.stem,
+            stage="export",
+            precision="fp32",
+            tag=args.tag,
+        )
+
+        quant_op_types = tuple(op.strip() for op in args.quant_op_type if op.strip())
+        calibration_percentile = args.calibration_percentile
+
+        if args.hist_safe_preset and args.calibration_method in {"entropy", "percentile"}:
+            if not quant_op_types:
+                quant_op_types = ("Conv",)
+            if args.calibration_method == "percentile" and calibration_percentile is None:
+                calibration_percentile = 99.99
+
         export_cfg = ExportConfig(
             weights_path=weights_path,
             output_path=export_path,
@@ -63,6 +83,7 @@ def main() -> None:
             simplify=not args.no_simplify,
             opset=args.opset,
         )
+
         optimize_cfg = OptimizeConfig(
             input_model=export_path,
             output_dir=artifact_dir,
@@ -76,11 +97,16 @@ def main() -> None:
             calib_size=args.calib_size,
             input_hw=parse_hw(args.imgsz),
             calibration_method=args.calibration_method,
+            calibration_percentile=calibration_percentile,
+            calibration_symmetric=args.calibration_symmetric,
+            op_types_to_quantize=quant_op_types,
             per_channel=not args.no_per_channel,
             reduce_range=args.reduce_range,
             u8u8=args.u8u8,
+            nodes_to_exclude=tuple(args.exclude_node),
             keep_io_types=args.keep_io_types,
         )
+
         return run_export_and_optimize(
             PipelineConfig(export=export_cfg, optimize=optimize_cfg),
             progress_callback=progress_callback,
@@ -93,3 +119,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    

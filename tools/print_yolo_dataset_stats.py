@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from tools._runtime import bootstrap_project_root
+bootstrap_project_root(__file__, levels=1)
+
 import argparse
 
 from pathlib import Path
-
-from _runtime import bootstrap_project_root
-
-bootstrap_project_root(__file__, levels=1)
-
 from core.common import format_info, run_cli_with_progress
 from core.datasets.stats import (
     collect_yolo_dataset_stats,
@@ -23,12 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Print statistics and plots for a YOLO-styled dataset.")
     parser.add_argument("--dataset-dir", type=Path, required=True, help="Path to a YOLO-styled dataset directory.")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional JSON output path. Defaults to <dataset-dir>/dataset_stats.json")
-    parser.add_argument(
-        "--output-png",
-        type=Path,
-        default=None,
-        help="Optional base PNG output path. Writes one mosaic PNG per detected split, for example <stem>_train.png and <stem>_test.png.",
-    )
+    parser.add_argument("--output-png", type=Path, default=None, help="Optional base PNG output path. Writes one mosaic PNG per detected split, for example <stem>_train.png and <stem>_test.png.")
     return parser.parse_args()
 
 
@@ -42,7 +35,7 @@ def main() -> None:
             progress_callback=progress_callback,
         ),
     )
-
+    
     print(render_dataset_summary(stats), flush=True)
     print()
     print(render_class_table(stats), flush=True)
@@ -67,3 +60,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    

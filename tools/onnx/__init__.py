@@ -1,1 +1,1 @@
-"""CLI entrypoints for the ONNX export and optimize modules."""
+"""CLI entrypoints for converting/processing YOLO weights into ONNX format"""

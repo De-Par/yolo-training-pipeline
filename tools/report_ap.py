@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from tools._runtime import bootstrap_project_root
+bootstrap_project_root(__file__, levels=1)
+
 import argparse
 
 from pathlib import Path
-
-from _runtime import bootstrap_project_root
-
-bootstrap_project_root(__file__, levels=1)
-
 from core.common import format_info, run_cli_with_progress
 from core.training.report_ap import export_per_class_ap
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Validate a YOLO checkpoint and export per-class AP metrics."
-    )
+    parser = argparse.ArgumentParser(description="Validate a YOLO checkpoint and export per-class AP metrics.")
     parser.add_argument("--model", type=Path, required=True, help="Path to .pt model checkpoint.")
     parser.add_argument("--data", type=Path, required=True, help="Path to dataset data.yaml.")
     parser.add_argument("--split", type=str, default="val", choices=["train", "val", "test"], help="Dataset split to validate on before exporting per-class AP.")
@@ -27,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=None, help="Optional confidence threshold override for validation.")
     parser.add_argument("--iou", type=float, default=None, help="Optional IoU threshold override for validation.")
     parser.add_argument("--output-dir", type=Path, default=None, help="Directory where CSV and JSON reports will be written.")
-    parser.add_argument("--top-k", type=int, default=12, help="How many best and worst classes to print in the terminal summary.")
+    parser.add_argument("--top-k", type=int, default=10, help="How many best and worst classes to print in the terminal summary.")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose Ultralytics validation output.")
     return parser.parse_args()
 
@@ -76,3 +72,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    

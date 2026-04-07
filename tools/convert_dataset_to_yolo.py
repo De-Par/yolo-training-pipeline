@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from tools._runtime import bootstrap_project_root
+bootstrap_project_root(__file__, levels=1)
+
 import argparse
 
 from pathlib import Path
-
-from _runtime import bootstrap_project_root
-
-bootstrap_project_root(__file__, levels=1)
-
 from core.common import run_cli_with_progress, stdout_logger
 from core.datasets.convert_dataset_to_yolo import ConvertDatasetOptions, convert_dataset_to_yolo, supported_input_formats
 
@@ -16,12 +14,7 @@ from core.datasets.convert_dataset_to_yolo import ConvertDatasetOptions, convert
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Convert a raw detection dataset into a YOLO-styled dataset.")
     parser.add_argument("--dataset-name", type=str, required=True, help="Logical dataset name for the converted output directory.")
-    parser.add_argument(
-        "--input-format",
-        choices=supported_input_formats(),
-        required=True,
-        help="Raw annotation schema adapter to use.",
-    )
+    parser.add_argument("--input-format", choices=supported_input_formats(), required=True, help="Raw annotation schema adapter to use.")
     parser.add_argument("--output-root", type=Path, default=Path("data/converted"), help="Where converted YOLO-style datasets are written.")
     parser.add_argument("--link-mode", choices=["symlink", "copy"], default="symlink", help="How to place images into the converted dataset.")
     parser.add_argument("--train-fraction", type=float, default=1.0, help="Fraction of train annotations/images to keep during conversion.")
@@ -81,3 +74,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    

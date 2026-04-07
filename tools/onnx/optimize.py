@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import sys
-from pathlib import Path
-
-TOOLS_DIR = Path(__file__).resolve().parents[1]
-if str(TOOLS_DIR) not in sys.path:
-    sys.path.insert(0, str(TOOLS_DIR))
-
-from _runtime import bootstrap_project_root
-
+from tools._runtime import bootstrap_project_root
 bootstrap_project_root(__file__, levels=2)
 
+import argparse
+
+from pathlib import Path
 from core.common import format_info, run_cli_with_progress
 from core.onnx.common import parse_hw
 from core.onnx.optimizer import OptimizeConfig, optimize_onnx
@@ -73,3 +67,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    
