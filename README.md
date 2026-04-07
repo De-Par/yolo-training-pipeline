@@ -1,68 +1,126 @@
-# YOLO Training Pipeline
+# 🧠 YOLO Training Pipeline
 
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![Ultralytics](https://img.shields.io/badge/ultralytics-YOLO-red)
-![ONNX](https://img.shields.io/badge/onnx-export%20%26%20optimize-yellow)
-![Status](https://img.shields.io/badge/status-generic%20pipeline-brightgreen)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)](https://docs.python.org/)
+[![Ultralytics](https://img.shields.io/badge/YOLO-Ultralytics%20trainer-ef4444)](https://docs.ultralytics.com/)
+[![ONNX](https://img.shields.io/badge/ONNX-export%20%26%20optimize-f59e0b)](https://onnxruntime.ai/docs/)
+[![Status](https://img.shields.io/badge/Status-generic%20pipeline-14b8a6)](#)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20WSL2%20%7C%20macOS-64748b)](#)
+
 
 A generic pipeline for converting raw detection datasets into YOLO format, inspecting and optionally mutating YOLO-styled datasets, training Ultralytics YOLO models, exporting per-class AP reports, and preparing ONNX artifacts for deployment.
 
 ---
 
-**Navigation**
-[`Home`](README.md) · [`Datasets`](docs/DATASETS.md) · [`Training`](docs/TRAINING.md) · [`Bench`](docs/BENCH.md) · [`ONNX`](docs/ONNX.md) · [`CLI`](docs/CLI.md) · [`Architecture`](docs/ARCHITECTURE.md)
+**Navigation:**
+[Home](#) · [Datasets](docs/DATASETS.md) · [Training](docs/TRAINING.md) · [Benching](docs/BENCH.md) · [ONNX](docs/ONNX.md) · [CLI](docs/CLI.md) · [Architecture](docs/ARCHITECTURE.md)
 
-<table>
-  <tr>
-    <td><strong>💡 Tip</strong><br>Follow the stages in order. Conversion should stay semantically faithful, stats should drive decisions, preparation should be intentional, and ONNX should be treated as a post-training deployment branch.</td>
-  </tr>
-</table>
 
-## Pipeline At A Glance
+```mermaid
+flowchart TB
+  %% Stage 1
+    subgraph S1[ ]
+      direction TB
+      L1[Stage 1: Preparation]:::stage
+      A0(0. Setup environment) --> A1(1. Download model) --> A2(2. Download dataset)
+    end
 
-```text
-Environment
-  source scripts/setup_env.sh [base|cpu|cuda]
+  %% Stage 2
+  subgraph S2[ ]
+    direction TB
+    L2[Stage 2: Dataset preprocessing]:::stage
+    B3(3. Convert to YOLO format)
+    B4(4. Modify)
+    B5(5. Collect statistics)
 
-Dataset branch
-  raw data
-    -> yolo-convert-dataset
-    -> yolo-print-stats
-    -> yolo-prepare-dataset (optional)
-    -> yolo-print-stats (recommended after prepare)
+    B3 -. optional .-> B4
+    B3 --> B5
+    B5 -. not satisfied? .-> B3
+    B4 .-> B5
+  end
 
-Training branch
-  dataset.yaml + model.pt
-    -> yolo-train
-    -> yolo-report-ap
+  %% Stage 3
+  subgraph S3[ ]
+    direction TB
+    L3[Stage 3: Model training]:::stage
+    C6([6. Train])
+  end
 
-Deployment branch
-  best.pt
-    -> yolo-onnx-export
-    -> yolo-onnx-optimize
-  or
-  best.pt
-    -> yolo-onnx-pipeline
+  %% Stage 4
+  subgraph S4[ ]
+    direction TB
+    L4[Stage 4: Model evaluation and exporting]:::stage
+    D7(7. AP report)
+    D8(8. Export to ONNX)
+    D9(9. Quality / performance bench)
+
+    D7 -. optional .-> D8
+    D7 --> D9
+    D8 .-> D9
+  end
+
+  %% Stage 5
+  subgraph S5[ ]
+    direction TB
+    L5[Stage 5: Deployment]:::stage
+    D10{{10. Deploy}}
+    E11(CPU inference)
+    E12(GPU inference)
+    E13(Demo app)
+
+    D10 --> E11
+    D10 --> E12
+    D10 -. built-in .-> E13
+  end
+
+  %% Main pipeline
+  A2 --> B3
+  B5 --> C6
+  C6 --> D7
+  D9 --> D10
+
+  %% Styles
+  classDef stage fill:#eef2ff,stroke:#6306f1,color:#312e81,stroke-width:1px
+  classDef prep fill:#f8fafc,stroke:#475569,color:#0f172a,stroke-width:1px
+  classDef process fill:#fff7ed,stroke:#f59e0b,color:#7c2d12,stroke-width:1px
+  classDef core fill:#f0fdf4,stroke:#16a34a,color:#14532d,stroke-width:1.2px
+  classDef eval fill:#eff6ff,stroke:#2563eb,color:#1e3a8a,stroke-width:1px
+  classDef deploy fill:#ecfeff,stroke:#0891b2,color:#164e63,stroke-width:1.2px
+  classDef demo fill:#fdf4ff,stroke:#c026d3,color:#701a75,stroke-width:1px
+
+  class A0,A1,A2 prep
+  class B3,B4,B5 process
+  class C6 core
+  class D7,D8,D9 eval
+  class D10,E11,E12 deploy
+  class E13 demo
+  class L1,L2,L3,L4,L5 stage
+
+  %% Stage box styling
+  style S1 fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
+  style S2 fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
+  style S3 fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
+  style S4 fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
+  style S5 fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
 ```
+
 
 ## Documentation Map
 
 | I want to... | Go here |
 |---|---|
-| understand dataset conversion and prepare rules | [Dataset Guide](docs/DATASETS.md) |
-| run and tune training | [Training Guide](docs/TRAINING.md) |
-| benchmark latency, FPS, and holdout quality | [Bench Guide](docs/BENCH.md) |
-| export and optimize ONNX artifacts | [ONNX Guide](docs/ONNX.md) |
-| run the interactive ONNX image demo | [ONNX Guide](docs/ONNX.md#interactive-demo) |
-| see exact commands and flags | [CLI Reference](docs/CLI.md) |
+| understand dataset conversion and prepare rules | [Datasets](docs/DATASETS.md) |
+| run and tune training | [Training](docs/TRAINING.md) |
+| export and optimize ONNX artifacts | [ONNX](docs/ONNX.md) |
+| benchmark latency, FPS, and holdout quality | [Benching](docs/BENCH.md) |
+| see exact commands and flags | [CLI](docs/CLI.md) |
 | understand code layout | [Architecture](docs/ARCHITECTURE.md) |
-| inspect the tracked train config example | [`configs/train/nvidia.example.yaml`](configs/train/nvidia.example.yaml) |
-| inspect the tracked prepare recipe example | [`configs/prepare/prepare.example.yaml`](configs/prepare/prepare.example.yaml) |
-| inspect the tracked benchmark config examples | [`configs/bench/cpu.example.yaml`](configs/bench/cpu.example.yaml), [`configs/bench/gpu.example.yaml`](configs/bench/gpu.example.yaml) |
+| inspect the tracked train config example | [nvidia.example.yaml](configs/train/nvidia.example.yaml) |
+| inspect the tracked prepare recipe example | [prepare.example.yaml](configs/prepare/prepare.example.yaml) |
+| inspect the tracked benchmark config examples | [cpu.example.yaml](configs/bench/cpu.example.yaml), [gpu.example.yaml](configs/bench/gpu.example.yaml) |
 
 ## Public CLI Surface
 
-Installable commands from [`pyproject.toml`](pyproject.toml):
+Installable commands from [pyproject.toml](pyproject.toml):
 
 | Command | Purpose |
 |---|---|
@@ -74,7 +132,6 @@ Installable commands from [`pyproject.toml`](pyproject.toml):
 | `yolo-onnx-export` | Export a YOLO `.pt` checkpoint to ONNX |
 | `yolo-onnx-optimize` | Optimize an ONNX model for CPU or CUDA runtime |
 | `yolo-onnx-pipeline` | Export and optimize in one command |
-| `yolo-onnx-demo` | Open an interactive ONNX image viewer with bbox overlay |
 | `yolo-benchmark-report` | Measure inference speed vs hardware points and render a PNG quality/speed report |
 
 The benchmark config uses `dataset.source` as the default benchmark source, usually `test`. Optional `dataset.speed` and `dataset.quality` blocks override that source only when you explicitly need different splits or direct image/label paths. If `dataset.quality` uses a dataset YAML and does not set `split`, it also defaults to `test`.
@@ -103,26 +160,22 @@ Demo download scripts:
 
 ```text
 .
-├── app/
-│   ├── __init__.py
-│   └── onnx_demo.py
 ├── configs/
 │   ├── bench/
-│   │   ├── cpu.example.yaml
-│   │   └── gpu.example.yaml
+│   │   └── *.example.yaml
 │   ├── prepare/
-│   │   └── prepare.example.yaml
+│   │   └── *.example.yaml
 │   └── train/
-│       └── nvidia.example.yaml
+│       └── *.example.yaml
 ├── core/
-│   ├── bench/
+|   ├── bench/
 │   ├── common/
 │   ├── datasets/
 │   ├── onnx/
 │   └── training/
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   ├── BENCH.md
+|   ├── BENCH.md
 │   ├── CLI.md
 │   ├── DATASETS.md
 │   ├── ONNX.md
@@ -138,8 +191,8 @@ Demo download scripts:
 │   ├── prepare_yolo_dataset.py
 │   ├── print_yolo_dataset_stats.py
 │   ├── report_ap.py
-│   ├── train.py
-│   └── yolo_bench_report.py
+|   ├── yolo_bench_report.py
+│   └── train.py
 └── pyproject.toml
 ```
 
@@ -182,7 +235,6 @@ yolo-report-ap --help
 yolo-onnx-export --help
 yolo-onnx-optimize --help
 yolo-onnx-pipeline --help
-yolo-onnx-demo --help
 yolo-benchmark-report --help
 ```
 
@@ -258,7 +310,7 @@ This stage only converts the raw schema into a YOLO-styled dataset. It should no
 
 ```bash
 yolo-convert-dataset \
-  --dataset-name fashionpedia_demo \
+  --dataset-name fashionpedia \
   --input-format coco-detection \
   --train-images-dir data/raw/fashionpedia/train/images \
   --train-annotations data/raw/fashionpedia/train/annotations.json \
@@ -267,20 +319,6 @@ yolo-convert-dataset \
   --output-root data/converted \
   --clean
 ```
-
-Expected output:
-
-```text
-data/converted/fashionpedia_demo/
-├── classes.txt
-├── conversion_report_train.json
-├── conversion_report_val.json
-├── fashionpedia_demo.yaml
-├── images/
-└── labels/
-```
-
-After this step the dataset is already trainable.
 
 DeepFashion2 conversion uses the `per-image-json` adapter instead:
 
@@ -307,7 +345,7 @@ Combined prepare resplit always renames moved image/label pairs to stable unique
 Use stats before touching the dataset:
 
 ```bash
-yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
+yolo-print-stats --dataset-dir data/converted/fashionpedia
 ```
 
 Main outputs:
@@ -321,17 +359,13 @@ This is the report to use when deciding whether to resplit, drop classes, or mer
 
 ### 5. Optionally mutate the YOLO-styled dataset in place
 
-This step is optional. Use it only when you want to change the dataset itself.
-
-The tracked starter recipe is:
-
-- [`configs/prepare/prepare.example.yaml`](configs/prepare/prepare.example.yaml)
+This step is optional. Use it only when you want to change the dataset itself. The tracked starter recipe is here: [prepare.example.yaml](configs/prepare/prepare.example.yaml)
 
 Apply it like this:
 
 ```bash
 yolo-prepare-dataset \
-  --dataset-dir data/converted/fashionpedia_demo \
+  --dataset-dir data/converted/fashionpedia \
   --recipe configs/prepare/prepare.example.yaml
 ```
 
@@ -347,20 +381,18 @@ Typical reasons to use it:
 Recommended follow-up:
 
 ```bash
-yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
+yolo-print-stats --dataset-dir data/converted/fashionpedia
 ```
 
 ### 6. Launch training
 
-The tracked NVIDIA-oriented example is:
-
-- [`configs/train/nvidia.example.yaml`](configs/train/nvidia.example.yaml)
+The tracked NVIDIA-oriented example is here: [nvidia.example.yaml](configs/train/nvidia.example.yaml)
 
 At minimum, make sure these fields point to the dataset and checkpoint you want:
 
 ```yaml
 model: models/YOLOv26/yolo26n.pt
-data: data/converted/fashionpedia_demo/fashionpedia_demo.yaml
+data: data/converted/fashionpedia/fashionpedia.yaml
 ```
 
 Then start training:
@@ -375,8 +407,8 @@ Or override the most important runtime knobs from CLI:
 yolo-train \
   --cfg configs/train/nvidia.example.yaml \
   --model models/YOLOv26/yolo26n.pt \
-  --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
-  --name fashionpedia-demo-run
+  --data data/converted/fashionpedia/fashionpedia.yaml \
+  --name yolo26n-fashionpedia-run
 ```
 
 Typical outputs:
@@ -396,8 +428,8 @@ After training, export validation metrics by class:
 
 ```bash
 yolo-report-ap \
-  --model runs/fashionpedia-demo-run/weights/best.pt \
-  --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
+  --model runs/yolo26n-fashionpedia-run/weights/best.pt \
+  --data data/converted/fashionpedia/fashionpedia.yaml \
   --split val
 ```
 
@@ -410,8 +442,8 @@ Export a checkpoint to ONNX:
 
 ```bash
 yolo-onnx-export \
-  --weights runs/fashionpedia-demo-run/weights/best.pt \
-  --output deploy/onnx/fashionpedia_demo.export.fp32.onnx \
+  --weights runs/yolo26n-fashionpedia-run/weights/best.pt \
+  --output deploy/onnx/fashionpedia.export.fp32.onnx \
   --imgsz 1024
 ```
 
@@ -419,18 +451,18 @@ Optimize an ONNX model for a target runtime:
 
 ```bash
 yolo-onnx-optimize \
-  --input deploy/onnx/fashionpedia_demo.export.fp32.onnx \
+  --input deploy/onnx/fashionpedia.export.fp32.onnx \
   --output-dir deploy/onnx/cpu \
   --target cpu \
   --int8 \
-  --calib-dir data/raw/fashionpedia/train/images
+  --calib-dir data/converted/fashionpedia/images/train
 ```
 
 Or run export + optimize in one command:
 
 ```bash
 yolo-onnx-pipeline \
-  --weights runs/fashionpedia-demo-run/weights/best.pt \
+  --weights runs/yolo26n-fashionpedia-run/weights/best.pt \
   --artifact-dir deploy/onnx/cuda \
   --target cuda \
   --fp16
@@ -494,7 +526,7 @@ source scripts/setup_env.sh base
 ./scripts/download_fashionpedia.sh
 
 yolo-convert-dataset \
-  --dataset-name fashionpedia_demo \
+  --dataset-name fashionpedia \
   --input-format coco-detection \
   --train-images-dir data/raw/fashionpedia/train/images \
   --train-annotations data/raw/fashionpedia/train/annotations.json \
@@ -502,23 +534,23 @@ yolo-convert-dataset \
   --val-annotations data/raw/fashionpedia/val/annotations.json \
   --clean
 
-yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
+yolo-print-stats --dataset-dir data/converted/fashionpedia
 
 yolo-prepare-dataset \
-  --dataset-dir data/converted/fashionpedia_demo \
+  --dataset-dir data/converted/fashionpedia \
   --recipe configs/prepare/prepare.example.yaml
 
-yolo-print-stats --dataset-dir data/converted/fashionpedia_demo
+yolo-print-stats --dataset-dir data/converted/fashionpedia
 
 yolo-train \
   --cfg configs/train/nvidia.example.yaml \
   --model models/YOLOv26/yolo26n.pt \
-  --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
-  --name fashionpedia-demo-run
+  --data data/converted/fashionpedia/fashionpedia.yaml \
+  --name yolo26n-fashionpedia-run
 
 yolo-report-ap \
-  --model runs/fashionpedia-demo-run/weights/best.pt \
-  --data data/converted/fashionpedia_demo/fashionpedia_demo.yaml \
+  --model runs/yolo26n-fashionpedia-run/weights/best.pt \
+  --data data/converted/fashionpedia/fashionpedia.yaml \
   --split val
 ```
 
@@ -532,5 +564,5 @@ yolo-report-ap \
 
 ---
 
-**Next**
-[`Dataset Guide`](docs/DATASETS.md) · [`Training Guide`](docs/TRAINING.md) · [`ONNX Guide`](docs/ONNX.md) · [`CLI Reference`](docs/CLI.md)
+**Next:**
+[Home](#) · [Datasets](docs/DATASETS.md) · [Training](docs/TRAINING.md) · [Benching](docs/BENCH.md) · [ONNX](docs/ONNX.md) · [CLI](docs/CLI.md) · [Architecture](docs/ARCHITECTURE.md)
