@@ -123,10 +123,7 @@ reset_unpack_dir() {
 
 zip_is_encrypted() {
     local archive="$1"
-    if zipinfo -v "$archive" 2>/dev/null | grep -q "file security status:                           encrypted"; then
-        return 0
-    fi
-    return 1
+    unzip -Z -v "$archive" 2>/dev/null | grep -q "file security status:.*encrypted"
 }
 
 extract_zip_archive() {

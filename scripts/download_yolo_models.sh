@@ -1,8 +1,16 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [ -n "${ZSH_VERSION:-}" ]; then
+    SCRIPT_SOURCE="${(%):-%N}"
+elif [ -n "${BASH_SOURCE[0]:-}" ]; then
+    SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+else
+    SCRIPT_SOURCE="$0"
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd -P)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 cd "${PROJECT_ROOT}"
 
