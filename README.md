@@ -279,7 +279,8 @@ data/raw/fashionpedia/
 DeepFashion2 uses a separate raw flow:
 
 ```bash
-export DEEPFASHION2_ARCHIVE_PASSWORD='your-password'   # required for protected nested split archives
+# Required for protected nested split archives, may differ from source
+export DEEPFASHION2_ARCHIVE_PASSWORD='2019Deepfashion2**'
 ./scripts/download_deepfashion2.sh --source official
 ```
 
